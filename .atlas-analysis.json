@@ -1,0 +1,100 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "PortOne Blesta Gateway",
+  "projectDescription": "PortOne V1 payment gateway integration for Blesta with recurring billing support",
+  "theme": "palm",
+  "primaryColor": "#FF6B35",
+  "lightColor": "#FFB4A2",
+  "darkColor": "#CC5629",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/payment-flow",
+              "concepts/billing-keys",
+              "concepts/supported-providers"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/one-time-payments",
+              "guides/recurring-payments",
+              "guides/refunds-and-voids",
+              "guides/logging",
+              "guides/security"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/testing",
+              "advanced/troubleshooting",
+              "advanced/changelog"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Gateway Methods",
+            "pages": [
+              "api/gateway/overview",
+              "api/gateway/payment-methods",
+              "api/gateway/card-storage",
+              "api/gateway/refund-methods"
+            ]
+          },
+          {
+            "group": "API Client",
+            "pages": [
+              "api/client/overview",
+              "api/client/authentication",
+              "api/client/billing-keys",
+              "api/client/payments"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "PortOne V1 JS SDK payment window for card registration",
+    "Billing key based recurring payments (auto-pay)",
+    "Full and partial refunds with balance validation",
+    "Support for 10+ Korean PG providers (KG Inicis, NICE, KCP, etc.)",
+    "File-based logging with configurable path",
+    "Payment amount verification with automatic cancellation",
+    "Card storage and management with billing keys",
+    "English and Korean language support"
+  ],
+  "publicApiSurface": [
+    "Portone::processCc() - Process one-time payment",
+    "Portone::processStoredCc() - Process recurring payment with billing key",
+    "Portone::storeCc() - Store card and issue billing key",
+    "Portone::updateCc() - Update stored card",
+    "Portone::removeCc() - Remove stored card and delete billing key",
+    "Portone::refundCc() - Refund payment (full or partial)",
+    "Portone::voidCc() - Void payment (full cancel)",
+    "PortoneApi::payAgain() - Charge using billing key",
+    "PortoneApi::issueBillingKey() - Issue new billing key",
+    "PortoneApi::getBillingKey() - Get billing key info",
+    "PortoneApi::deleteBillingKey() - Delete billing key",
+    "PortoneApi::getPayment() - Get payment details",
+    "PortoneApi::cancelPayment() - Cancel/refund payment"
+  ]
+}
