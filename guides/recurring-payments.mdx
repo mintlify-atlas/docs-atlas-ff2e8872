@@ -1,0 +1,265 @@
+---
+title: Recurring Payments
+description: Process automatic recurring payments using stored billing keys
+---
+
+## Overview
+
+Recurring payments allow you to charge customers automatically without requiring their presence. The PortOne gateway uses billing keys (customer_uid) to enable this functionality.
+
+## Two-Step Process
+
+### 1. Initial Card Registration - storeCc()
+
+When a customer first adds their card, the `storeCc()` method verifies and stores the billing key:
+
+```php
+public function storeCc(array $card_info, array $contact, $client_reference_id = null)
+{
+    // Billing key was already issued by the PortOne JS SDK popup.
+    $customer_uid = $card_info['reference_id'] ?? $_POST['reference_id'] ?? null;
+
+    if (!$this->validateCustomerUid($customer_uid)) {
+        $this->Input->setErrors([
+            'billing_key' => [
+                'failed' => Language::_('Portone.!error.billing_key.failed', true),
+            ],
+        ]);
+        return false;
+    }
+
+    // Verify the billing key exists on PortOne
+    $response = $this->api->getBillingKey($customer_uid);
+
+    if ($response === false) {
+        $this->logApiError($this->api->getLastError());
+        $this->Input->setErrors([
+            'billing_key' => [
+                'failed' => Language::_('Portone.!error.billing_key.failed', true),
+            ],
+        ]);
+        return false;
+    }
+
+    $billing_info = $response['response'] ?? [];
+    $last4 = '';
+    $card_type = 'other';
+
+    if (!empty($billing_info['card_number'])) {
+        $last4 = substr(preg_replace('/\D/', '', $billing_info['card_number']), -4);
+        $card_type = $this->detectCardType($billing_info['card_number']);
+    } elseif (!empty($_POST['last4'])) {
+        $last4 = substr(preg_replace('/\D/', '', $_POST['last4']), -4);
+    }
+
+    if (!empty($billing_info['card_name'])) {
+        $card_type = substr(preg_replace('/[^a-zA-Z0-9\s\x{3130}-\x{318F}\x{AC00}-\x{D7AF}]/u', '', $billing_info['card_name']), 0, 50);
+    } elseif (!empty($_POST['type'])) {
+        $card_type = substr(preg_replace('/[^a-zA-Z0-9\s\x{3130}-\x{318F}\x{AC00}-\x{D7AF}]/u', '', $_POST['type']), 0, 50);
+    }
+
+    $this->writeLog('INFO', sprintf(
+        'storeCc OK | customer_uid=%s | last4=%s | type=%s',
+        $customer_uid,
+        $last4,
+        $card_type
+    ));
+
+    return [
+        'client_reference_id' => $client_reference_id ?? $customer_uid,
+        'reference_id' => $customer_uid,
+        'last4' => $last4,
+        'expiration' => '',
+        'type' => $card_type,
+    ];
+}
+```
+
+**Location:** portone.php:508-568
+
+### 2. Automatic Charging - processStoredCc()
+
+When a payment is due, Blesta automatically calls `processStoredCc()` to charge the stored billing key:
+
+```php
+public function processStoredCc($client_reference_id, $account_reference_id, $amount, ?array $invoice_amounts = null)
+{
+    if (!$this->validateAmount($amount)) {
+        return $this->buildPaymentError();
+    }
+
+    $merchant_uid = 'bl_' . bin2hex(random_bytes(12));
+    $requested_amount = (int) round((float) $amount);
+
+    $params = [
+        'customer_uid' => $account_reference_id,
+        'merchant_uid' => $merchant_uid,
+        'amount' => $requested_amount,
+        'name' => 'Blesta Payment',
+    ];
+
+    if ($this->currency) {
+        $params['currency'] = $this->currency;
+    }
+
+    if (!empty($this->meta['channel_key'])) {
+        $params['channel_key'] = $this->meta['channel_key'];
+    }
+
+    $response = $this->api->payAgain($params);
+
+    if ($response === false) {
+        $this->logApiError($this->api->getLastError());
+        $this->Input->setErrors([
+            'payment' => [
+                'failed' => Language::_('Portone.!error.payment.failed', true),
+            ],
+        ]);
+        return [
+            'status' => 'error',
+            'reference_id' => null,
+            'transaction_id' => null,
+        ];
+    }
+
+    $payment = $response['response'];
+
+    // Verify charged amount matches requested amount
+    if (isset($payment['amount']) && (int) $payment['amount'] !== $requested_amount) {
+        $this->api->cancelPayment(['imp_uid' => $payment['imp_uid'], 'reason' => 'Amount mismatch']);
+        $this->Input->setErrors([
+            'payment' => ['amount_mismatch' => Language::_('Portone.!error.payment.amount_mismatch', true)],
+        ]);
+        return [
+            'status' => 'error',
+            'reference_id' => null,
+            'transaction_id' => null,
+        ];
+    }
+
+    $status = $this->mapPaymentStatus($payment['status'] ?? '');
+
+    $this->writeLog('INFO', sprintf(
+        'processStoredCc OK | merchant_uid=%s | imp_uid=%s | amount=%d | customer_uid=%s | status=%s',
+        $payment['merchant_uid'] ?? $merchant_uid,
+        $payment['imp_uid'] ?? '',
+        $requested_amount,
+        $account_reference_id,
+        $status
+    ));
+
+    return [
+        'status' => $status,
+        'reference_id' => $payment['merchant_uid'] ?? $merchant_uid,
+        'transaction_id' => $payment['imp_uid'] ?? null,
+    ];
+}
+```
+
+**Location:** portone.php:631-702
+
+## Billing Key (customer_uid)
+
+The billing key is the core of recurring payments:
+
+- **Format:** `bl_` prefix followed by alphanumeric characters (e.g., `bl_abc123def456`)
+- **Issued by:** PortOne JS SDK popup during initial card registration
+- **Stored in:** Blesta's database as `reference_id` (account reference)
+- **Used for:** All subsequent automatic payments without customer interaction
+
+### Validation
+
+All billing keys are validated using `validateCustomerUid()`:
+
+```php
+private function validateCustomerUid($uid)
+{
+    if (empty($uid)) {
+        return false;
+    }
+    // Must start with bl_ and contain only safe characters
+    return (bool) preg_match('/^bl_[a-zA-Z0-9_]{5,60}$/', $uid);
+}
+```
+
+**Location:** portone.php:780-787
+
+This validation prevents unauthorized billing key usage by ensuring only UIDs generated by the JS SDK popup are accepted.
+
+## Automatic Payment Flow
+
+Recurring payments happen **without customer interaction**:
+
+1. Blesta's cron job detects an invoice is due
+2. Blesta calls `processStoredCc()` with the stored billing key
+3. The gateway charges the card using `/subscribe/payments/again` API
+4. Payment is verified and recorded
+5. Customer receives email notification
+
+```
+Blesta Cron
+    ↓
+processStoredCc($client_ref, $account_ref, $amount)
+    ↓
+PortOne API: POST /subscribe/payments/again
+    {
+        "customer_uid": "bl_abc123def456",
+        "merchant_uid": "bl_789xyz",
+        "amount": 10000,
+        "name": "Blesta Payment"
+    }
+    ↓
+Payment Success/Failure
+    ↓
+Blesta Updates Invoice
+```
+
+## Customer Presence Not Required
+
+The gateway explicitly declares that customer presence is not required:
+
+```php
+public function requiresCustomerPresent()
+{
+    return false;
+}
+```
+
+**Location:** portone.php:109-112
+
+This allows Blesta to process payments automatically via cron jobs without requiring the customer to be logged in or present.
+
+## Updating Stored Cards
+
+When a customer updates their payment method, the old billing key is deleted and a new one is issued:
+
+```php
+public function updateCc(array $card_info, array $contact, $client_reference_id, $account_reference_id)
+{
+    // Delete old billing key — abort if it fails to prevent orphan keys on PortOne
+    $result = $this->removeCc($client_reference_id, $account_reference_id);
+    if ($result === false) {
+        return false;
+    }
+
+    // Issue new billing key
+    return $this->storeCc($card_info, $contact, $client_reference_id);
+}
+```
+
+**Location:** portone.php:579-589
+
+## API Endpoint
+
+Both `processCc()` and `processStoredCc()` use the same PortOne API endpoint:
+
+```php
+public function payAgain(array $params)
+{
+    return $this->apiRequest('POST', '/subscribe/payments/again', $params);
+}
+```
+
+**Location:** portone_api.php:87-90
+
+This endpoint charges a card using a pre-registered billing key without requiring the customer's CVV or other card details.

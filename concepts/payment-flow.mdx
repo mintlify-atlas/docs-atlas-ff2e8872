@@ -1,0 +1,195 @@
+---
+title: Payment Flow
+description: Understand how PortOne processes payments in Blesta with billing keys
+---
+
+The PortOne Blesta Gateway uses a two-phase payment model: first issuing a billing key (customer_uid) through the PortOne JS SDK, then using that key for automated recurring payments.
+
+## Overview
+
+The payment flow consists of two main stages:
+
+1. **Card Registration** - Customer registers their card once via payment popup
+2. **Automated Payments** - Subsequent payments happen automatically using the stored billing key
+
+## Payment Flow Diagram
+
+```
+Customer Card Registration Request
+    ↓
+PortOne JS SDK Payment Popup (amount: 0)
+    ↓
+Billing Key (customer_uid) Issued
+    ↓
+Card Info Stored in Blesta
+    ↓
+Payment via Billing Key (POST /subscribe/payments/again)
+```
+
+## Detailed Payment Process
+
+<Steps>
+  <Step title="Initial Card Registration">
+    When a customer first adds their payment method:
+    
+    1. The custom form (`cc_form.pdt`) loads the PortOne JS SDK
+    2. A payment popup opens with `amount: 0` (no charge)
+    3. Customer enters their card information
+    4. PortOne validates the card with the PG provider
+    5. A billing key (`customer_uid`) is issued and returned
+    
+    The `customer_uid` follows the format: `bl_` + random alphanumeric characters (e.g., `bl_a1b2c3d4e5f6g7h8i9j0k1l2`)
+  </Step>
+  
+  <Step title="Billing Key Storage">
+    After successful card registration:
+    
+    ```php
+    // portone.php:508-567
+    public function storeCc(array $card_info, array $contact, $client_reference_id = null)
+    {
+        $customer_uid = $card_info['reference_id'] ?? $_POST['reference_id'] ?? null;
+        
+        if (!$this->validateCustomerUid($customer_uid)) {
+            return false;
+        }
+        
+        // Verify the billing key exists on PortOne
+        $response = $this->api->getBillingKey($customer_uid);
+        
+        return [
+            'client_reference_id' => $client_reference_id ?? $customer_uid,
+            'reference_id' => $customer_uid,
+            'last4' => $last4,
+            'expiration' => '',
+            'type' => $card_type,
+        ];
+    }
+    ```
+    
+    The billing key is validated and stored in Blesta's database along with card metadata (last 4 digits, card type).
+  </Step>
+  
+  <Step title="Automated Recurring Payment">
+    When Blesta needs to charge the customer (invoice due, renewal, etc.):
+    
+    ```php
+    // portone.php:631-701
+    public function processStoredCc($client_reference_id, $account_reference_id, $amount, ?array $invoice_amounts = null)
+    {
+        $merchant_uid = 'bl_' . bin2hex(random_bytes(12));
+        $requested_amount = (int) round((float) $amount);
+        
+        $params = [
+            'customer_uid' => $account_reference_id,  // Billing key
+            'merchant_uid' => $merchant_uid,          // Unique transaction ID
+            'amount' => $requested_amount,
+            'name' => 'Blesta Payment',
+        ];
+        
+        $response = $this->api->payAgain($params);
+    }
+    ```
+    
+    The payment happens server-to-server without customer interaction. The customer doesn't need to be present.
+  </Step>
+  
+  <Step title="Payment Verification">
+    After the API call:
+    
+    1. PortOne charges the stored card via the PG provider
+    2. The gateway verifies the charged amount matches the requested amount
+    3. If amounts don't match, the payment is automatically cancelled:
+    
+    ```php
+    // portone.php:674-683
+    if (isset($payment['amount']) && (int) $payment['amount'] !== $requested_amount) {
+        $this->api->cancelPayment([
+            'imp_uid' => $payment['imp_uid'],
+            'reason' => 'Amount mismatch'
+        ]);
+        return ['status' => 'error'];
+    }
+    ```
+    
+    4. The transaction status is mapped and returned to Blesta
+  </Step>
+</Steps>
+
+## Transaction Identifiers
+
+### customer_uid (Billing Key)
+
+The `customer_uid` is the billing key that represents a stored card:
+
+- **Format**: `bl_` + alphanumeric characters (validated by regex)
+- **Purpose**: Links payments to a specific card without storing card details
+- **Lifecycle**: Issued once, used many times, deleted when card is removed
+- **Validation**: Must match pattern `/^bl_[a-zA-Z0-9_]{5,60}$/` (portone.php:786)
+
+### merchant_uid (Transaction ID)
+
+The `merchant_uid` is a unique identifier for each payment transaction:
+
+- **Format**: `bl_` + 24 random hex characters
+- **Generation**: `'bl_' . bin2hex(random_bytes(12))` (portone.php:285, 637)
+- **Purpose**: Ensures idempotency and transaction tracking
+- **Usage**: Used for refunds, cancellations, and payment lookups
+
+### imp_uid (PortOne Transaction ID)
+
+The `imp_uid` is PortOne's internal transaction identifier:
+
+- **Format**: Assigned by PortOne (e.g., `imp_1234567890`)
+- **Purpose**: References the transaction in PortOne's system
+- **Usage**: Used for API calls like `/payments/{imp_uid}` and cancellations
+
+## API Endpoints Used
+
+| Stage | Endpoint | Method | Purpose |
+|-------|----------|--------|--------|
+| Card Registration | `/subscribe/customers/{customer_uid}` | POST | Issue billing key |
+| Verify Billing Key | `/subscribe/customers/{customer_uid}` | GET | Validate stored key |
+| Recurring Payment | `/subscribe/payments/again` | POST | Charge stored card |
+| Refund/Cancel | `/payments/cancel` | POST | Reverse transaction |
+| Payment Details | `/payments/{imp_uid}` | GET | Lookup transaction |
+
+See the [PortOne API Client](/api/client/overview) for implementation details.
+
+## Security Considerations
+
+<Warning>
+  The gateway never stores actual card numbers or CVV codes. All sensitive card data is handled exclusively by PortOne and the PG provider.
+</Warning>
+
+- **customer_uid validation** prevents unauthorized billing key usage (portone.php:780-787)
+- **Amount verification** ensures the charged amount matches the request (portone.php:316-322, 674-683)
+- **Input sanitization** prevents log injection and parameter tampering
+- **No customer interaction** means payments can't be intercepted via browser-based attacks
+
+## Error Handling
+
+The gateway sanitizes PG provider error messages before showing them to users:
+
+```php
+// portone.php:815-825
+private function logApiError($error)
+{
+    if (!empty($error)) {
+        $sanitized = strip_tags($error);
+        // Raw errors logged but not shown to users
+        $this->writeLog('ERROR', $sanitized);
+    }
+    
+    // Generic user-facing message
+    return Language::_('Portone.!error.payment.generic', true);
+}
+```
+
+Raw PG errors (which may contain test mode warnings, HTML, or internal codes) are logged for debugging but users see only generic error messages.
+
+## Related Topics
+
+- [Billing Keys](/concepts/billing-keys) - Learn about customer_uid lifecycle
+- [Supported Providers](/concepts/supported-providers) - PG provider requirements
+- [API Reference](/api/client/overview) - PortOne API implementation

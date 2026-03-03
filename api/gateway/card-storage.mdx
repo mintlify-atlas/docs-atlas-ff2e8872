@@ -1,0 +1,271 @@
+---
+title: Card Storage Methods
+description: Methods for storing, updating, and removing credit cards as billing keys
+---
+
+## Store Credit Card
+
+```php
+public function storeCc(array $card_info, array $contact, $client_reference_id = null)
+```
+
+Stores a credit card by verifying the billing key issued by the PortOne JS SDK popup and retrieving card metadata.
+
+**Location:** `portone.php:508`
+
+### Parameters
+
+<ParamField path="card_info" type="array" required>
+  Card details from payment form
+  
+  <ParamField path="reference_id" type="string" required>
+    Billing key (customer_uid) issued by JS SDK. Must start with `bl_` prefix.
+  </ParamField>
+</ParamField>
+
+<ParamField path="contact" type="array" required>
+  Contact information (not used by PortOne but required by interface)
+</ParamField>
+
+<ParamField path="client_reference_id" type="string">
+  Existing client reference ID (for updates)
+</ParamField>
+
+### Return Value
+
+Returns `false` on failure, or an array on success:
+
+<ResponseField name="client_reference_id" type="string" required>
+  Client reference identifier (uses provided value or customer_uid)
+</ResponseField>
+
+<ResponseField name="reference_id" type="string" required>
+  Billing key (customer_uid) for future payments
+</ResponseField>
+
+<ResponseField name="last4" type="string">
+  Last 4 digits of card number (if available from PortOne)
+</ResponseField>
+
+<ResponseField name="expiration" type="string">
+  Card expiration date (always empty - PortOne doesn't provide this)
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Card type/name (e.g., `visa`, `mc`, or Korean card name)
+</ResponseField>
+
+### Example Usage
+
+```php
+// Card info from PortOne JS SDK
+$card_info = [
+    'reference_id' => 'bl_xyz789abc123'
+];
+
+$contact = [
+    'first_name' => 'John',
+    'last_name' => 'Doe',
+    'email' => 'john@example.com'
+];
+
+$result = $gateway->storeCc($card_info, $contact);
+
+if ($result !== false) {
+    echo "Card stored successfully";
+    echo "Billing key: " . $result['reference_id'];
+    echo "Last 4 digits: " . $result['last4'];
+}
+```
+
+### Implementation Notes
+
+- Validates billing key format using `validateCustomerUid()`
+- Calls PortOne `/subscribe/customers/{customer_uid}` API to verify billing key exists
+- Extracts last 4 digits from card number if available
+- Detects card type from card number pattern:
+  - `4xxx` → `visa`
+  - `51-55xx` → `mc` (Mastercard)
+  - `34xx` or `37xx` → `amex`
+  - `9xxx` → `domestic` (Korean cards)
+- Falls back to PortOne's card_name if detection fails
+- Accepts fallback values from `$_POST['last4']` and `$_POST['type']`
+
+---
+
+## Update Stored Card
+
+```php
+public function updateCc(array $card_info, array $contact, $client_reference_id, $account_reference_id)
+```
+
+Updates a stored credit card by deleting the old billing key and creating a new one.
+
+**Location:** `portone.php:579`
+
+### Parameters
+
+<ParamField path="card_info" type="array" required>
+  New card details from payment form
+  
+  <ParamField path="reference_id" type="string" required>
+    New billing key (customer_uid) from JS SDK
+  </ParamField>
+</ParamField>
+
+<ParamField path="contact" type="array" required>
+  Contact information
+</ParamField>
+
+<ParamField path="client_reference_id" type="string" required>
+  Client reference identifier
+</ParamField>
+
+<ParamField path="account_reference_id" type="string" required>
+  Old billing key (customer_uid) to be removed
+</ParamField>
+
+### Return Value
+
+Same as `storeCc()` - returns `false` on failure or card details array on success.
+
+### Example Usage
+
+```php
+// Update existing card with new billing key
+$new_card = [
+    'reference_id' => 'bl_new_key_456'
+];
+
+$result = $gateway->updateCc(
+    $new_card,
+    $contact,
+    'client_123',
+    'bl_old_key_789'
+);
+
+if ($result !== false) {
+    echo "Card updated successfully";
+}
+```
+
+### Implementation Notes
+
+- First calls `removeCc()` to delete old billing key
+- Aborts if deletion fails (prevents orphan keys on PortOne)
+- Then calls `storeCc()` to verify and store new billing key
+- Both operations must succeed for update to complete
+
+---
+
+## Remove Stored Card
+
+```php
+public function removeCc($client_reference_id, $account_reference_id)
+```
+
+Removes a stored credit card by deleting the billing key from PortOne.
+
+**Location:** `portone.php:598`
+
+### Parameters
+
+<ParamField path="client_reference_id" type="string" required>
+  Client reference identifier
+</ParamField>
+
+<ParamField path="account_reference_id" type="string" required>
+  Billing key (customer_uid) to delete
+</ParamField>
+
+### Return Value
+
+Returns `false` on failure, or an array on success:
+
+<ResponseField name="client_reference_id" type="string" required>
+  Client reference identifier (echoed back)
+</ResponseField>
+
+<ResponseField name="reference_id" type="string" required>
+  Deleted billing key (customer_uid)
+</ResponseField>
+
+### Example Usage
+
+```php
+// Remove stored card
+$result = $gateway->removeCc(
+    'client_123',
+    'bl_billing_key_to_delete'
+);
+
+if ($result !== false) {
+    echo "Card removed successfully";
+}
+```
+
+### Implementation Notes
+
+- Calls PortOne `DELETE /subscribe/customers/{customer_uid}` API
+- Sets error if API call fails
+- Logs API errors for debugging
+
+---
+
+## Requires Card Storage
+
+```php
+public function requiresCcStorage()
+```
+
+Indicates whether this gateway requires card storage for processing payments.
+
+**Location:** `portone.php:98`
+
+### Return Value
+
+<ResponseField name="requiresCcStorage" type="bool">
+  Always returns `true` - PortOne requires billing keys for all payments
+</ResponseField>
+
+### Example Usage
+
+```php
+if ($gateway->requiresCcStorage()) {
+    echo "This gateway requires card storage";
+}
+```
+
+---
+
+## Requires Customer Present
+
+```php
+public function requiresCustomerPresent()
+```
+
+Indicates whether customer must be present (in browser) for payments.
+
+**Location:** `portone.php:109`
+
+### Return Value
+
+<ResponseField name="requiresCustomerPresent" type="bool">
+  Always returns `false` - allows automatic recurring payments without customer interaction
+</ResponseField>
+
+### Example Usage
+
+```php
+if (!$gateway->requiresCustomerPresent()) {
+    echo "Can process automatic recurring payments";
+}
+```
+
+### Implementation Notes
+
+Returning `false` enables:
+- Automatic subscription renewals
+- Scheduled recurring payments
+- Background payment processing
+- No customer interaction required after initial card storage

@@ -1,0 +1,419 @@
+---
+title: Troubleshooting
+description: Common issues and solutions for the PortOne Blesta Gateway with debugging tips and error resolution
+---
+
+This guide helps you diagnose and resolve common issues with the PortOne Blesta Gateway.
+
+## API Authentication Issues
+
+<AccordionGroup>
+  <Accordion title="401 Unauthorized - Invalid API credentials">
+    **Symptoms:**
+    - Payments fail immediately
+    - Logs show "401 Unauthorized" or "Invalid authentication"
+    
+    **Solutions:**
+    
+    1. **Verify API credentials** in gateway settings:
+       - REST API Key should start with `imp_apikey_`
+       - REST API Secret is case-sensitive
+       - Merchant code should start with `imp_`
+    
+    2. **Check PortOne console**:
+       - Log in to [PortOne Console](https://admin.portone.io)
+       - Navigate to Settings → API Keys
+       - Regenerate keys if necessary
+    
+    3. **Ensure correct API version**:
+       - This gateway uses **V1 API** only
+       - V2 credentials will not work
+    
+    4. **Check for whitespace**:
+       - Remove any leading/trailing spaces from credentials
+       - Blesta may add spaces when copy-pasting
+  </Accordion>
+
+  <Accordion title="Token refresh failures">
+    **Symptoms:**
+    - First payment works, subsequent payments fail
+    - Logs show token expiration errors
+    
+    **Solutions:**
+    
+    1. **Check token auto-refresh** (added in v1.0.0):
+       - Gateway automatically retries with new token on 401
+       - If still failing, check API credentials
+    
+    2. **Verify system time**:
+       - Server clock must be accurate
+       - Token expiration relies on system time
+       - Use NTP to sync time
+  </Accordion>
+</AccordionGroup>
+
+## Payment Failures
+
+<AccordionGroup>
+  <Accordion title="Amount mismatch errors">
+    **Symptoms:**
+    - Payment completes on PortOne but shows error in Blesta
+    - Logs show "Amount mismatch detected"
+    - Payment is automatically cancelled
+    
+    **Cause:**
+    Gateway automatically cancels payments where requested amount doesn't match PortOne's recorded amount.
+    
+    **Solutions:**
+    
+    1. **Check invoice amount**:
+       - Verify invoice amount in Blesta
+       - Ensure currency is set to KRW
+       - Look for rounding issues
+    
+    2. **Review PortOne transaction**:
+       - Log in to PortOne console
+       - Check transaction amount
+       - Compare with Blesta invoice
+    
+    3. **Investigate custom amount fields**:
+       - Check if any plugins modify payment amounts
+       - Disable conflicting extensions
+  </Accordion>
+
+  <Accordion title="PG (Payment Gateway) errors">
+    **Symptoms:**
+    - Payment fails with PG-specific error code
+    - Error message starts with code like `F0004`, `F1000`, etc.
+    
+    **Solutions:**
+    
+    1. **Check PG contract status**:
+       - Verify your PG (e.g., KG Inicis) contract is active
+       - Ensure billing key (subscription) feature is enabled
+       - Contact PG support to verify MID status
+    
+    2. **Test vs Production MID**:
+       - Test MID: Usually starts with test prefix (e.g., `INIBillTst`)
+       - Production MID: Provided by PG after contract
+       - Don't mix test and production credentials
+    
+    3. **Common PG error codes**:
+       - `F0004` - PG request failed (check MID and contract)
+       - `F1000` - Invalid card or expired
+       - Check PG documentation for specific error codes
+  </Accordion>
+
+  <Accordion title="Payment popup doesn't open">
+    **Symptoms:**
+    - Click "Add Payment Account" but nothing happens
+    - JavaScript errors in browser console
+    
+    **Solutions:**
+    
+    1. **Check JavaScript errors**:
+       - Open browser DevTools (F12)
+       - Look for errors in Console tab
+       - Common issue: PortOne SDK not loaded
+    
+    2. **Verify PortOne SDK**:
+       - Check if `iamport.payment-1.2.0.js` loads
+       - Try loading from CDN: `https://cdn.iamport.kr/js/iamport.payment-1.2.0.js`
+       - Check for HTTPS/HTTP mixed content warnings
+    
+    3. **Browser compatibility**:
+       - Test in different browser
+       - Disable browser extensions
+       - Clear cache and cookies
+    
+    4. **Check channel key** (if using V1):
+       - V1 API uses `pg` parameter, not `channelKey`
+       - Channel key is optional for V1
+       - Fixed in v1.1.0
+  </Accordion>
+</AccordionGroup>
+
+## Billing Key Issues
+
+<AccordionGroup>
+  <Accordion title="Billing key not found">
+    **Symptoms:**
+    - Payment fails with "Customer billing key not found"
+    - Works for card registration but fails for recurring payment
+    
+    **Solutions:**
+    
+    1. **Verify customer_uid format**:
+       - Must start with `bl_` prefix
+       - 5-60 characters after prefix
+       - Only alphanumeric and underscore allowed
+    
+    2. **Check billing key in PortOne**:
+       - Log in to PortOne console
+       - Navigate to Payments → Billing Keys
+       - Search for `customer_uid`
+       - Verify billing key exists and is active
+    
+    3. **Re-register card**:
+       - Delete existing payment method in Blesta
+       - Add new payment account
+       - This will create new billing key
+  </Accordion>
+
+  <Accordion title="Billing key deletion fails">
+    **Symptoms:**
+    - Can't remove payment method
+    - Logs show deletion error
+    
+    **Solutions:**
+    
+    1. **Check API permissions**:
+       - Verify API key has delete permissions
+       - Some API keys are read-only
+    
+    2. **Verify billing key exists**:
+       - Key may already be deleted on PortOne
+       - Check PortOne console
+    
+    3. **Updated in v1.1.0**:
+       - `removeCc` now properly calls `setErrors()` and logs failures
+       - Upgrade to latest version for better error handling
+  </Accordion>
+
+  <Accordion title="Orphan billing keys after update failure">
+    **Symptoms:**
+    - Old billing key remains on PortOne after update
+    - Multiple billing keys for same customer
+    
+    **Solution:**
+    Fixed in **v1.1.0**:
+    - `updateCc` now aborts if `removeCc` fails
+    - Prevents orphan billing keys on PortOne
+    - Upgrade to v1.1.0 or later
+    
+    To clean up existing orphan keys:
+    1. Log in to PortOne console
+    2. Navigate to Billing Keys
+    3. Manually delete old keys for affected customers
+  </Accordion>
+</AccordionGroup>
+
+## Log and Configuration Issues
+
+<AccordionGroup>
+  <Accordion title="Log path errors">
+    **Symptoms:**
+    - Settings page shows "Log path does not exist or is not writable"
+    - No log files created
+    
+    **Solutions:**
+    
+    1. **Create log directory**:
+       ```bash
+       mkdir -p /var/www/logs_blesta
+       chown www-data:www-data /var/www/logs_blesta
+       chmod 755 /var/www/logs_blesta
+       ```
+    
+    2. **Check permissions**:
+       ```bash
+       # Test write permission
+       sudo -u www-data touch /var/www/logs_blesta/test.log
+       ```
+    
+    3. **Use alternative path**:
+       - Default: `/var/www/logs_blesta`
+       - Alternative: `/var/log/blesta_portone`
+       - Or use Blesta logs directory
+    
+    4. **Path traversal prevention**:
+       - Gateway validates log paths for security
+       - Paths like `../../../etc/passwd` are rejected
+       - Use absolute paths only
+  </Accordion>
+
+  <Accordion title="Log injection attempts">
+    **Symptoms:**
+    - Seeing warning about log injection
+    - Newline characters in error messages
+    
+    **Solution:**
+    Fixed in **v1.1.0**:
+    - Newline and carriage return characters are automatically stripped
+    - Prevents log file manipulation
+    - No action needed if using v1.1.0+
+  </Accordion>
+
+  <Accordion title="Logs not appearing in Blesta gateway logs">
+    **Symptoms:**
+    - File logs work but nothing in Blesta admin logs
+    - Gateway log integration not working
+    
+    **Solutions:**
+    
+    1. **Check Blesta logging settings**:
+       - Navigate to Settings → System → General
+       - Ensure "Gateway Logging" is enabled
+    
+    2. **Verify log() method calls**:
+       - Gateway calls `$this->log()` for all transactions
+       - Errors are sanitized before logging (raw errors in file logs)
+    
+    3. **Check database**:
+       - Logs stored in `log_gateways` table
+       - Verify table exists and is writable
+  </Accordion>
+</AccordionGroup>
+
+## API Rate Limiting and Server Errors
+
+<AccordionGroup>
+  <Accordion title="429 Rate limit errors">
+    **Symptoms:**
+    - Error: "Rate limited by payment server. Please try again later."
+    - Multiple payments fail in short time
+    
+    **Solutions:**
+    
+    1. **Wait and retry**:
+       - PortOne enforces rate limits to prevent abuse
+       - Wait a few minutes before retrying
+    
+    2. **Reduce request frequency**:
+       - Don't retry payments immediately on failure
+       - Implement exponential backoff
+       - Batch operations if possible
+    
+    3. **Contact PortOne support**:
+       - Request rate limit increase if needed
+       - Explain your use case
+    
+    **Note:** Explicit 429 handling added in **v1.1.0**
+  </Accordion>
+
+  <Accordion title="5xx Server errors">
+    **Symptoms:**
+    - Error: "Payment server returned an error. Please try again later."
+    - HTTP 500, 502, 503, or 504 errors
+    
+    **Solutions:**
+    
+    1. **Check PortOne status**:
+       - Visit PortOne status page
+       - Check for scheduled maintenance
+       - Wait for service restoration
+    
+    2. **Implement retry logic**:
+       - Wait 5-10 minutes
+       - Retry payment
+       - Don't retry more than 2-3 times
+    
+    3. **Check PG status**:
+       - Server error might be from PG (e.g., KG Inicis)
+       - Check PG status page if available
+    
+    **Note:** Improved 5xx error handling in **v1.1.0**
+  </Accordion>
+
+  <Accordion title="Connection failures">
+    **Symptoms:**
+    - Error: "Connection to payment server failed."
+    - cURL timeout errors
+    
+    **Solutions:**
+    
+    1. **Check network connectivity**:
+       ```bash
+       # Test connection to PortOne API
+       curl -I https://api.iamport.kr
+       ```
+    
+    2. **Verify SSL/TLS**:
+       - Gateway enforces SSL/TLS verification
+       - Ensure server has up-to-date CA certificates
+       ```bash
+       # Update CA certificates (Ubuntu/Debian)
+       sudo apt-get update
+       sudo apt-get install ca-certificates
+       ```
+    
+    3. **Check firewall**:
+       - Allow outbound HTTPS (port 443)
+       - Whitelist `api.iamport.kr`
+    
+    4. **PHP cURL configuration**:
+       ```bash
+       # Verify cURL is installed and configured
+       php -r "phpinfo();" | grep cURL
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Debugging Tips
+
+### Enable Debug Logging
+
+1. **Check file logs** at configured path (default: `/var/www/logs_blesta`)
+   - Format: `YYYYMMDD_Portone.log`
+   - Contains raw API errors and detailed request info
+
+2. **Check Blesta gateway logs**:
+   - Navigate to: Tools → Logs → Gateway
+   - Filter by PortOne gateway
+   - Note: Error messages are sanitized here (raw in file logs)
+
+### Review Transaction Flow
+
+```
+Card Registration:
+1. User clicks "Add Payment Account"
+2. PortOne popup opens (amount: 0)
+3. User enters card details
+4. Billing key issued (customer_uid: bl_xxxxx)
+5. Card info saved to Blesta
+
+Recurring Payment:
+1. Invoice generated in Blesta
+2. Gateway calls /subscribe/payments/again
+3. PortOne charges card using billing key
+4. Amount verification performed
+5. Payment recorded in Blesta
+```
+
+### Common Log Messages
+
+**Success:**
+```
+[INFO] processCc OK | merchant_uid=bl_xxx | imp_uid=imp_xxx | amount=10000 | status=approved
+```
+
+**Amount mismatch:**
+```
+[ERROR] Amount mismatch (requested: 10000, charged: 9500) - cancelling
+```
+
+**API error:**
+```
+[ERROR] F0004:PG사 결제요청에 실패하여 중단합니다...
+```
+
+### Get Help
+
+If you're still experiencing issues:
+
+1. **Gather information**:
+   - Gateway version
+   - PHP version
+   - Blesta version
+   - PG provider
+   - Error messages from logs
+   - Steps to reproduce
+
+2. **Check documentation**:
+   - [PortOne V1 API Docs](https://api.iamport.kr)
+   - This documentation site
+
+3. **Contact support**:
+   - PortOne support for API issues
+   - PG support for payment processing issues
+   - Gateway maintainer for code issues

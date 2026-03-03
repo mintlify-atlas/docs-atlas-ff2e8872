@@ -1,0 +1,86 @@
+---
+title: PortOne Blesta Gateway
+description: PortOne V1 payment gateway integration for Blesta with recurring billing support
+---
+
+# PortOne Blesta Gateway
+
+PortOne (formerly iamport) credit card payment gateway integration for Blesta with full support for recurring billing and automated payments.
+
+## Overview
+
+The PortOne Blesta Gateway enables seamless payment processing through PortOne's V1 API, providing a complete solution for subscription-based businesses using Blesta. Built with KG이니시스 (KG Inicis) as the default payment gateway, this module supports any PG provider offered by PortOne through simple configuration changes.
+
+The gateway uses PortOne's JS SDK payment window for secure card registration and issues billing keys that enable automatic recurring payments without requiring customer interaction for each transaction.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Billing Key Payments" icon="key">
+    Secure card registration through PortOne V1 JS SDK with billing key issuance for seamless recurring charges
+  </Card>
+  
+  <Card title="Recurring Billing" icon="rotate">
+    Automated subscription payments using stored billing keys without customer presence
+  </Card>
+  
+  <Card title="Refund Management" icon="arrow-rotate-left">
+    Full and partial refund support with automatic balance validation
+  </Card>
+  
+  <Card title="Comprehensive Logging" icon="file-lines">
+    File-based payment logs with sanitized error messages to protect sensitive data
+  </Card>
+</CardGroup>
+
+## Payment Flow
+
+The gateway follows a secure two-step process:
+
+1. **Card Registration**: Customer registers their card through PortOne JS SDK popup (with 0 amount)
+2. **Billing Key Issuance**: PortOne generates a `customer_uid` (billing key)
+3. **Card Storage**: Blesta stores the card information securely
+4. **Automatic Payments**: Future charges use the billing key via `/subscribe/payments/again` endpoint
+
+## Supported PG Providers
+
+The module supports all PortOne V1 payment gateways that offer billing key functionality:
+
+- **KG이니시스** (html5_inicis) - Fully tested
+- 나이스정보통신 (NICE)
+- NHN KCP
+- 다날 (Danal)
+- KICC
+- KSNET
+- 스마트로 (Smartro)
+- 웰컴페이먼츠 (Welcome Payments)
+- 키움페이 (Kiwoompay)
+- 헥토파이낸셜 (Hecto Financial)
+
+<Note>
+Each PG provider has different billing key issuance methods and test MIDs. Refer to PortOne documentation for provider-specific requirements.
+</Note>
+
+## Quick Links
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get started with installation requirements and setup instructions
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure your gateway settings and API credentials
+  </Card>
+</CardGroup>
+
+## Technical Specifications
+
+- **API Version**: PortOne V1 (`https://api.iamport.kr`)
+- **Payment SDK**: PortOne JS SDK (`iamport.payment-1.2.0.js`)
+- **Default PG**: KG이니시스 (`html5_inicis`)
+- **Currency**: KRW (Korean Won)
+- **Version**: 1.1.0
+
+## License
+
+This project is distributed under the [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html).

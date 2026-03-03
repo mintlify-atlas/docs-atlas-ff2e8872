@@ -1,0 +1,634 @@
+---
+title: 'Payment Methods'
+description: 'Methods for processing, retrieving, and canceling payments'
+---
+
+## Overview
+
+The PortoneApi class provides methods for processing both one-time and recurring payments, retrieving payment details, and canceling or refunding payments.
+
+## payOnetime()
+
+Process a one-time payment using card information without storing a billing key.
+
+```php
+public function payOnetime(array $params)
+```
+
+### Parameters
+
+<ParamField path="params" type="array" required>
+  Array of payment parameters
+</ParamField>
+
+<ParamField path="params.merchant_uid" type="string" required>
+  Your unique order ID (e.g., "order_123456")
+</ParamField>
+
+<ParamField path="params.amount" type="integer" required>
+  Payment amount in the smallest currency unit (e.g., cents, won)
+</ParamField>
+
+<ParamField path="params.card_number" type="string" required>
+  Credit card number (without spaces or dashes)
+</ParamField>
+
+<ParamField path="params.expiry" type="string" required>
+  Card expiration date in YYYY-MM format
+</ParamField>
+
+<ParamField path="params.birth" type="string" required>
+  Cardholder's birth date (YYMMDD) or business registration number (10 digits)
+</ParamField>
+
+<ParamField path="params.pwd_2digit" type="string" required>
+  First 2 digits of card password
+</ParamField>
+
+<ParamField path="params.pg" type="string" required>
+  Payment gateway identifier (e.g., "nice", "kcp")
+</ParamField>
+
+<ParamField path="params.name" type="string" required>
+  Payment description or product name
+</ParamField>
+
+<ParamField path="params.buyer_name" type="string">
+  Buyer's name
+</ParamField>
+
+<ParamField path="params.buyer_email" type="string">
+  Buyer's email address
+</ParamField>
+
+<ParamField path="params.buyer_tel" type="string">
+  Buyer's phone number
+</ParamField>
+
+### Returns
+
+<ResponseField name="return" type="array|false">
+  Returns API response array on success, or `false` on failure
+</ResponseField>
+
+<ResponseField name="response.imp_uid" type="string">
+  PortOne transaction ID
+</ResponseField>
+
+<ResponseField name="response.merchant_uid" type="string">
+  Your order ID
+</ResponseField>
+
+<ResponseField name="response.amount" type="integer">
+  Paid amount
+</ResponseField>
+
+<ResponseField name="response.status" type="string">
+  Payment status: "paid", "failed", "cancelled"
+</ResponseField>
+
+<ResponseField name="response.paid_at" type="integer">
+  Unix timestamp when payment was completed
+</ResponseField>
+
+<ResponseField name="response.receipt_url" type="string">
+  URL for payment receipt
+</ResponseField>
+
+### Implementation
+
+From `portone_api.php:70-79`:
+
+```php
+/**
+ * One-time payment with card info (non-authenticated)
+ *
+ * @param array $params [merchant_uid, amount, card_number, expiry, birth, pwd_2digit, pg, name, ...]
+ * @return array|false API response or false on failure
+ */
+public function payOnetime(array $params)
+{
+    return $this->apiRequest('POST', '/subscribe/payments/onetime', $params);
+}
+```
+
+### Example Usage
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->payOnetime([
+    'merchant_uid' => 'order_' . time(),
+    'amount' => 10000,
+    'card_number' => '1234567890123456',
+    'expiry' => '2025-12',
+    'birth' => '900101',
+    'pwd_2digit' => '12',
+    'pg' => 'nice',
+    'name' => 'Monthly Hosting Fee',
+    'buyer_name' => 'John Doe',
+    'buyer_email' => 'john@example.com',
+    'buyer_tel' => '01012345678'
+]);
+
+if ($result === false) {
+    echo "Payment failed: " . $api->getLastError();
+} else {
+    echo "Payment successful!";
+    echo "Transaction ID: " . $result['response']['imp_uid'];
+    echo "Status: " . $result['response']['status'];
+    echo "Receipt: " . $result['response']['receipt_url'];
+}
+```
+
+## payAgain()
+
+Process a recurring payment using a previously stored billing key.
+
+```php
+public function payAgain(array $params)
+```
+
+### Parameters
+
+<ParamField path="params" type="array" required>
+  Array of payment parameters
+</ParamField>
+
+<ParamField path="params.customer_uid" type="string" required>
+  Billing key identifier (from `issueBillingKey`)
+</ParamField>
+
+<ParamField path="params.merchant_uid" type="string" required>
+  Your unique order ID for this payment
+</ParamField>
+
+<ParamField path="params.amount" type="integer" required>
+  Payment amount in the smallest currency unit
+</ParamField>
+
+<ParamField path="params.name" type="string" required>
+  Payment description or product name
+</ParamField>
+
+<ParamField path="params.buyer_name" type="string">
+  Buyer's name
+</ParamField>
+
+<ParamField path="params.buyer_email" type="string">
+  Buyer's email address
+</ParamField>
+
+<ParamField path="params.buyer_tel" type="string">
+  Buyer's phone number
+</ParamField>
+
+### Returns
+
+<ResponseField name="return" type="array|false">
+  Returns API response array on success, or `false` on failure
+</ResponseField>
+
+<ResponseField name="response.imp_uid" type="string">
+  PortOne transaction ID
+</ResponseField>
+
+<ResponseField name="response.merchant_uid" type="string">
+  Your order ID
+</ResponseField>
+
+<ResponseField name="response.customer_uid" type="string">
+  Billing key used for this payment
+</ResponseField>
+
+<ResponseField name="response.amount" type="integer">
+  Paid amount
+</ResponseField>
+
+<ResponseField name="response.status" type="string">
+  Payment status: "paid", "failed", "cancelled"
+</ResponseField>
+
+<ResponseField name="response.paid_at" type="integer">
+  Unix timestamp when payment was completed
+</ResponseField>
+
+<ResponseField name="response.receipt_url" type="string">
+  URL for payment receipt
+</ResponseField>
+
+### Implementation
+
+From `portone_api.php:81-90`:
+
+```php
+/**
+ * Recurring payment with billing key
+ *
+ * @param array $params [customer_uid, merchant_uid, amount, name, ...]
+ * @return array|false API response or false on failure
+ */
+public function payAgain(array $params)
+{
+    return $this->apiRequest('POST', '/subscribe/payments/again', $params);
+}
+```
+
+### Example Usage
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->payAgain([
+    'customer_uid' => 'gw_123',
+    'merchant_uid' => 'subscription_' . time(),
+    'amount' => 10000,
+    'name' => 'Monthly Subscription - January 2025',
+    'buyer_name' => 'John Doe',
+    'buyer_email' => 'john@example.com'
+]);
+
+if ($result === false) {
+    echo "Recurring payment failed: " . $api->getLastError();
+} else {
+    echo "Payment processed successfully!";
+    echo "Transaction ID: " . $result['response']['imp_uid'];
+    echo "Status: " . $result['response']['status'];
+}
+```
+
+## getPayment()
+
+Retrieve detailed information about a specific payment.
+
+```php
+public function getPayment($imp_uid)
+```
+
+### Parameters
+
+<ParamField path="imp_uid" type="string" required>
+  PortOne transaction ID (starts with "imp_")
+</ParamField>
+
+### Returns
+
+<ResponseField name="return" type="array|false">
+  Returns API response array on success, or `false` on failure
+</ResponseField>
+
+<ResponseField name="response.imp_uid" type="string">
+  PortOne transaction ID
+</ResponseField>
+
+<ResponseField name="response.merchant_uid" type="string">
+  Your order ID
+</ResponseField>
+
+<ResponseField name="response.amount" type="integer">
+  Payment amount
+</ResponseField>
+
+<ResponseField name="response.cancel_amount" type="integer">
+  Cancelled/refunded amount
+</ResponseField>
+
+<ResponseField name="response.status" type="string">
+  Payment status: "ready", "paid", "failed", "cancelled"
+</ResponseField>
+
+<ResponseField name="response.paid_at" type="integer">
+  Unix timestamp when payment was completed
+</ResponseField>
+
+<ResponseField name="response.failed_at" type="integer">
+  Unix timestamp when payment failed (if applicable)
+</ResponseField>
+
+<ResponseField name="response.cancelled_at" type="integer">
+  Unix timestamp when payment was cancelled (if applicable)
+</ResponseField>
+
+<ResponseField name="response.fail_reason" type="string">
+  Reason for payment failure
+</ResponseField>
+
+<ResponseField name="response.cancel_reason" type="string">
+  Reason for cancellation
+</ResponseField>
+
+<ResponseField name="response.name" type="string">
+  Payment description
+</ResponseField>
+
+<ResponseField name="response.buyer_name" type="string">
+  Buyer's name
+</ResponseField>
+
+<ResponseField name="response.buyer_email" type="string">
+  Buyer's email
+</ResponseField>
+
+<ResponseField name="response.receipt_url" type="string">
+  URL for payment receipt
+</ResponseField>
+
+<ResponseField name="response.card_name" type="string">
+  Card brand name
+</ResponseField>
+
+<ResponseField name="response.card_number" type="string">
+  Masked card number
+</ResponseField>
+
+### Implementation
+
+From `portone_api.php:126-135`:
+
+```php
+/**
+ * Get single payment details
+ *
+ * @param string $imp_uid PortOne transaction ID
+ * @return array|false API response or false on failure
+ */
+public function getPayment($imp_uid)
+{
+    return $this->apiRequest('GET', '/payments/' . urlencode($imp_uid));
+}
+```
+
+### Example Usage
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->getPayment('imp_123456789');
+
+if ($result === false) {
+    echo "Payment not found: " . $api->getLastError();
+} else {
+    $payment = $result['response'];
+    echo "Order ID: " . $payment['merchant_uid'];
+    echo "Amount: " . $payment['amount'];
+    echo "Status: " . $payment['status'];
+    echo "Paid at: " . date('Y-m-d H:i:s', $payment['paid_at']);
+    
+    if ($payment['status'] === 'cancelled') {
+        echo "Cancelled amount: " . $payment['cancel_amount'];
+        echo "Cancel reason: " . $payment['cancel_reason'];
+    }
+}
+```
+
+## cancelPayment()
+
+Cancel or refund a payment (full or partial).
+
+```php
+public function cancelPayment(array $params)
+```
+
+### Parameters
+
+<ParamField path="params" type="array" required>
+  Array of cancellation parameters
+</ParamField>
+
+<ParamField path="params.imp_uid" type="string">
+  PortOne transaction ID to cancel (use this OR merchant_uid, not both)
+</ParamField>
+
+<ParamField path="params.merchant_uid" type="string">
+  Your order ID to cancel (use this OR imp_uid, not both)
+</ParamField>
+
+<ParamField path="params.amount" type="integer">
+  Amount to cancel (for partial refunds). Omit for full refund.
+</ParamField>
+
+<ParamField path="params.reason" type="string" required>
+  Reason for cancellation
+</ParamField>
+
+<ParamField path="params.refund_holder" type="string">
+  Account holder name (for refund to bank account)
+</ParamField>
+
+<ParamField path="params.refund_bank" type="string">
+  Bank code (for refund to bank account)
+</ParamField>
+
+<ParamField path="params.refund_account" type="string">
+  Account number (for refund to bank account)
+</ParamField>
+
+### Returns
+
+<ResponseField name="return" type="array|false">
+  Returns API response array on success, or `false` on failure
+</ResponseField>
+
+<ResponseField name="response.imp_uid" type="string">
+  PortOne transaction ID
+</ResponseField>
+
+<ResponseField name="response.merchant_uid" type="string">
+  Your order ID
+</ResponseField>
+
+<ResponseField name="response.amount" type="integer">
+  Original payment amount
+</ResponseField>
+
+<ResponseField name="response.cancel_amount" type="integer">
+  Total cancelled amount (including this cancellation)
+</ResponseField>
+
+<ResponseField name="response.status" type="string">
+  Payment status after cancellation: "cancelled" (full) or "paid" (partial)
+</ResponseField>
+
+<ResponseField name="response.cancelled_at" type="integer">
+  Unix timestamp when cancelled
+</ResponseField>
+
+<ResponseField name="response.cancel_reason" type="string">
+  Cancellation reason
+</ResponseField>
+
+### Implementation
+
+From `portone_api.php:137-146`:
+
+```php
+/**
+ * Cancel payment (full or partial)
+ *
+ * @param array $params [imp_uid or merchant_uid, amount(optional), reason, ...]
+ * @return array|false API response or false on failure
+ */
+public function cancelPayment(array $params)
+{
+    return $this->apiRequest('POST', '/payments/cancel', $params);
+}
+```
+
+### Example Usage
+
+#### Full Refund
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->cancelPayment([
+    'imp_uid' => 'imp_123456789',
+    'reason' => 'Customer requested refund'
+]);
+
+if ($result === false) {
+    echo "Cancellation failed: " . $api->getLastError();
+} else {
+    echo "Payment cancelled successfully";
+    echo "Refunded amount: " . $result['response']['cancel_amount'];
+}
+```
+
+#### Partial Refund
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+// Original payment: 10000
+// Partial refund: 3000
+$result = $api->cancelPayment([
+    'imp_uid' => 'imp_123456789',
+    'amount' => 3000,
+    'reason' => 'Partial refund for returned items'
+]);
+
+if ($result === false) {
+    echo "Partial refund failed: " . $api->getLastError();
+} else {
+    $payment = $result['response'];
+    echo "Partial refund successful";
+    echo "Total refunded: " . $payment['cancel_amount'];
+    echo "Remaining: " . ($payment['amount'] - $payment['cancel_amount']);
+}
+```
+
+#### Refund by Order ID
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->cancelPayment([
+    'merchant_uid' => 'order_123456',
+    'reason' => 'Duplicate payment'
+]);
+
+if ($result === false) {
+    echo "Cancellation failed: " . $api->getLastError();
+} else {
+    echo "Payment cancelled successfully";
+}
+```
+
+## Best Practices
+
+### Payment Workflow
+
+1. **One-time Payment**: Use `payOnetime()` for single transactions
+2. **Recurring Setup**: Use `issueBillingKey()` first, then `payAgain()` for subscriptions
+3. **Verification**: Always call `getPayment()` to verify payment status
+4. **Error Handling**: Check return value and use `getLastError()` for failures
+
+### Merchant UID Format
+
+Use unique, reproducible merchant_uid values:
+
+```php
+// Good formats
+$merchant_uid = 'invoice_' . $invoice_id;
+$merchant_uid = 'order_' . $order_id . '_' . time();
+
+// Avoid
+$merchant_uid = rand();  // Not reproducible
+$merchant_uid = time();  // Possible collisions
+```
+
+### Error Handling
+
+```php
+$result = $api->payAgain($params);
+
+if ($result === false) {
+    $error = $api->getLastError();
+    
+    // Log for debugging
+    error_log("Payment failed: $error");
+    
+    // Check for specific errors
+    if (strpos($error, 'insufficient') !== false) {
+        return "Insufficient funds";
+    } elseif (strpos($error, 'card') !== false) {
+        return "Card declined. Please check your card information.";
+    } else {
+        return "Payment processing failed. Please try again.";
+    }
+}
+```
+
+### Payment Verification
+
+Always verify payment status after processing:
+
+```php
+// Process payment
+$result = $api->payAgain($params);
+
+if ($result !== false) {
+    $imp_uid = $result['response']['imp_uid'];
+    
+    // Verify payment
+    $payment = $api->getPayment($imp_uid);
+    
+    if ($payment !== false && $payment['response']['status'] === 'paid') {
+        // Payment confirmed - activate service
+        activateService($payment['response']);
+    } else {
+        // Payment not confirmed - handle error
+        logPaymentFailure($imp_uid);
+    }
+}
+```
+
+### Refund Handling
+
+For refunds, always check the current payment status first:
+
+```php
+// Get current payment status
+$payment = $api->getPayment($imp_uid);
+
+if ($payment === false) {
+    echo "Payment not found";
+    exit;
+}
+
+$paid_amount = $payment['response']['amount'];
+$cancelled_amount = $payment['response']['cancel_amount'];
+$remaining = $paid_amount - $cancelled_amount;
+
+if ($remaining <= 0) {
+    echo "Payment already fully refunded";
+    exit;
+}
+
+// Process refund
+$result = $api->cancelPayment([
+    'imp_uid' => $imp_uid,
+    'amount' => $remaining,  // Refund remaining amount
+    'reason' => 'Customer request'
+]);
+```

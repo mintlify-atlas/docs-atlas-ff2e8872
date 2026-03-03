@@ -1,0 +1,228 @@
+---
+title: Payment Processing Methods
+description: Methods for processing one-time and recurring credit card payments
+---
+
+## Process One-Time Payment
+
+```php
+public function processCc(array $card_info, $amount, ?array $invoice_amounts = null)
+```
+
+Processes a one-time credit card payment using a billing key issued by the PortOne JS SDK popup.
+
+**Location:** `portone.php:262`
+
+### Parameters
+
+<ParamField path="card_info" type="array" required>
+  Card details from payment form
+  
+  <ParamField path="reference_id" type="string" required>
+    Billing key (customer_uid) issued by JS SDK popup. Must start with `bl_` prefix.
+  </ParamField>
+</ParamField>
+
+<ParamField path="amount" type="float" required>
+  Payment amount (will be rounded to integer)
+</ParamField>
+
+<ParamField path="invoice_amounts" type="array">
+  Invoice breakdown (optional, not used by gateway)
+</ParamField>
+
+### Return Value
+
+<ResponseField name="status" type="string" required>
+  Transaction status: `approved`, `declined`, `error`, or `pending`
+</ResponseField>
+
+<ResponseField name="reference_id" type="string" required>
+  Merchant UID (format: `bl_` + 24 hex characters)
+</ResponseField>
+
+<ResponseField name="transaction_id" type="string">
+  PortOne transaction ID (imp_uid)
+</ResponseField>
+
+### Example Usage
+
+```php
+// Card info contains billing key from JS SDK
+$card_info = [
+    'reference_id' => 'bl_abc123def456' // from PortOne popup
+];
+
+$result = $gateway->processCc($card_info, 50000.00);
+
+if ($result['status'] === 'approved') {
+    echo "Payment successful!";
+    echo "Transaction ID: " . $result['transaction_id'];
+}
+```
+
+### Implementation Notes
+
+- Validates amount is positive numeric value
+- Validates billing key format (must match `^bl_[a-zA-Z0-9_]{5,60}$`)
+- Generates unique merchant_uid with `bl_` prefix
+- Calls PortOne `/payments/again` API endpoint
+- Verifies charged amount matches requested amount
+- Automatically cancels payment if amount mismatch detected
+
+---
+
+## Process Recurring Payment
+
+```php
+public function processStoredCc($client_reference_id, $account_reference_id, $amount, ?array $invoice_amounts = null)
+```
+
+Processes a recurring payment using a previously stored billing key.
+
+**Location:** `portone.php:631`
+
+### Parameters
+
+<ParamField path="client_reference_id" type="string" required>
+  Client reference identifier
+</ParamField>
+
+<ParamField path="account_reference_id" type="string" required>
+  Billing key (customer_uid) from stored card
+</ParamField>
+
+<ParamField path="amount" type="float" required>
+  Payment amount (will be rounded to integer)
+</ParamField>
+
+<ParamField path="invoice_amounts" type="array">
+  Invoice breakdown (optional)
+</ParamField>
+
+### Return Value
+
+<ResponseField name="status" type="string" required>
+  Transaction status: `approved`, `declined`, `error`, or `pending`
+</ResponseField>
+
+<ResponseField name="reference_id" type="string">
+  Merchant UID (format: `bl_` + 24 hex characters)
+</ResponseField>
+
+<ResponseField name="transaction_id" type="string">
+  PortOne transaction ID (imp_uid)
+</ResponseField>
+
+### Example Usage
+
+```php
+// Process recurring payment for stored card
+$result = $gateway->processStoredCc(
+    'client_123',
+    'bl_stored_billing_key',
+    30000.00
+);
+
+if ($result['status'] === 'approved') {
+    echo "Recurring payment processed successfully";
+}
+```
+
+### Implementation Notes
+
+- No customer interaction required
+- Uses stored billing key for automatic charging
+- Validates amount before processing
+- Generates new merchant_uid for each transaction
+- Verifies charged amount matches request
+- Includes channel_key if configured
+
+---
+
+## Authorize Payment
+
+```php
+public function authorizeCc(array $card_info, $amount, ?array $invoice_amounts = null)
+```
+
+Authorizes a credit card payment. **Note:** PortOne does not support separate auth/capture, so this method is identical to `processCc()`.
+
+**Location:** `portone.php:349`
+
+### Parameters
+
+Same as `processCc()`.
+
+### Return Value
+
+Same as `processCc()`.
+
+### Example Usage
+
+```php
+// Authorize payment (processes immediately)
+$result = $gateway->authorizeCc($card_info, 25000.00);
+```
+
+---
+
+## Authorize with Billing Key
+
+```php
+public function authorizeStoredCc($client_reference_id, $account_reference_id, $amount, ?array $invoice_amounts = null)
+```
+
+Authorizes payment using stored billing key. **Note:** Identical to `processStoredCc()` as PortOne does not support separate auth/capture.
+
+**Location:** `portone.php:713`
+
+### Parameters
+
+Same as `processStoredCc()`.
+
+### Return Value
+
+Same as `processStoredCc()`.
+
+---
+
+## Capture Payment (Not Supported)
+
+```php
+public function captureCc($reference_id, $transaction_id, $amount, ?array $invoice_amounts = null)
+```
+
+Captures a previously authorized payment. **Not supported** by PortOne.
+
+**Location:** `portone.php:363`
+
+### Return Value
+
+<ResponseField name="status" type="string">
+  Always returns `error`
+</ResponseField>
+
+<ResponseField name="reference_id" type="string">
+  Echoes back the reference_id parameter
+</ResponseField>
+
+<ResponseField name="transaction_id" type="string">
+  Echoes back the transaction_id parameter
+</ResponseField>
+
+---
+
+## Capture Stored Payment (Not Supported)
+
+```php
+public function captureStoredCc($client_reference_id, $account_reference_id, $reference_id, $transaction_id, $amount, ?array $invoice_amounts = null)
+```
+
+Captures a stored card authorization. **Not supported** by PortOne.
+
+**Location:** `portone.php:729`
+
+### Return Value
+
+Same as `captureCc()` - always returns error status.

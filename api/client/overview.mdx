@@ -1,0 +1,121 @@
+---
+title: 'PortoneApi Class Overview'
+description: 'Core API client class for interacting with the PortOne V1 REST API'
+---
+
+## Overview
+
+The `PortoneApi` class provides a PHP client for interacting with the PortOne (iamport) V1 REST API. It handles authentication, token management, and provides methods for all payment operations.
+
+## Base URL
+
+```
+https://api.iamport.kr
+```
+
+## Constructor
+
+```php
+public function __construct($imp_key, $imp_secret)
+```
+
+<ParamField path="imp_key" type="string" required>
+  PortOne REST API Key from your PortOne account settings
+</ParamField>
+
+<ParamField path="imp_secret" type="string" required>
+  PortOne REST API Secret from your PortOne account settings
+</ParamField>
+
+### Example
+
+```php
+$api = new PortoneApi(
+    'imp_apikey_1234567890',
+    'secret_key_abcdefghijklmnopqrstuvwxyz'
+);
+```
+
+## Token Management
+
+The class automatically manages access tokens:
+
+- **Automatic caching**: Tokens are cached in memory and reused until expiration
+- **60-second buffer**: Tokens are refreshed 60 seconds before expiration to prevent edge cases
+- **Automatic refresh**: Expired tokens are automatically refreshed on the next API call
+- **401 retry logic**: On 401 Unauthorized responses, the token is cleared and the request is retried once
+
+## Error Handling
+
+All API methods return either an array on success or `false` on failure.
+
+### Checking for Errors
+
+```php
+$result = $api->payAgain($params);
+
+if ($result === false) {
+    $error = $api->getLastError();
+    // Handle error
+}
+```
+
+### getLastError()
+
+```php
+public function getLastError()
+```
+
+Returns the last error message as a string, or `null` if no error occurred.
+
+## HTTP Methods
+
+The class uses cURL for HTTP requests with the following configuration:
+
+- **Content-Type**: `application/json`
+- **Authorization**: `Bearer {access_token}` (for authenticated requests)
+- **Timeout**: 30 seconds
+- **Connect timeout**: 10 seconds
+- **SSL verification**: Enabled (CURLOPT_SSL_VERIFYPEER and CURLOPT_SSL_VERIFYHOST)
+
+### Supported HTTP Methods
+
+- **GET**: Used for retrieving resources (payments, billing keys)
+- **POST**: Used for creating resources (payments, billing keys)
+- **DELETE**: Used for removing billing keys
+- **PUT**: Available but not used in current implementation
+
+## Security Features
+
+### Memory Cleanup
+
+The destructor clears sensitive data from memory:
+
+```php
+public function __destruct()
+{
+    $this->imp_key = null;
+    $this->imp_secret = null;
+    $this->access_token = null;
+}
+```
+
+### SSL Verification
+
+All requests use full SSL certificate verification to ensure secure communication with PortOne servers.
+
+## Response Structure
+
+All API responses follow the PortOne V1 API format:
+
+```php
+[
+    'code' => 0,          // 0 for success, non-zero for error
+    'message' => null,    // Error message if code != 0
+    'response' => [       // Actual response data
+        // ... varies by endpoint
+    ]
+]
+```
+
+The class automatically checks the `code` field and returns `false` if it's non-zero, storing the error message for retrieval via `getLastError()`.

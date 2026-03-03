@@ -1,0 +1,288 @@
+---
+title: Billing Keys
+description: Learn how billing keys (customer_uid) enable secure recurring payments
+---
+
+Billing keys (also called `customer_uid` in PortOne's API) are tokenized representations of stored credit cards that enable automated recurring payments without requiring the customer to re-enter their card information.
+
+## What Are Billing Keys?
+
+A billing key is a secure token issued by PortOne that represents a customer's payment method:
+
+- **Not the actual card number** - It's a reference ID that links to card details stored securely by PortOne and the PG provider
+- **Single-use per card** - Each stored card gets a unique billing key
+- **Long-lived** - Remains valid until explicitly deleted or the card expires
+- **Server-side only** - Used for API calls, never exposed to the customer's browser after initial registration
+
+## Format Requirements
+
+The PortOne Blesta Gateway enforces strict format validation for billing keys:
+
+```php
+// portone.php:780-787
+private function validateCustomerUid($uid)
+{
+    if (empty($uid)) {
+        return false;
+    }
+    // Must start with bl_ and contain only safe characters
+    return (bool) preg_match('/^bl_[a-zA-Z0-9_]{5,60}$/', $uid);
+}
+```
+
+### Format Rules
+
+- **Prefix**: Must start with `bl_`
+- **Characters**: Only alphanumeric (`a-z`, `A-Z`, `0-9`) and underscore (`_`)
+- **Length**: 5-60 characters after the prefix (total length: 8-63 characters)
+- **Example**: `bl_a1b2c3d4e5f6g7h8i9j0k1l2`
+
+<Info>
+  The `bl_` prefix helps prevent accidental use of incorrect identifiers and provides a namespace for Blesta-issued billing keys.
+</Info>
+
+## Billing Key Lifecycle
+
+Billing keys go through three main phases: issue, use, and delete.
+
+### 1. Issue (Card Registration)
+
+Billing keys are issued when a customer first registers their card:
+
+<Steps>
+  <Step title="Trigger JS SDK Popup">
+    The customer clicks "Add Payment Method" and the PortOne JS SDK opens a payment popup.
+  </Step>
+  
+  <Step title="Card Entry & Validation">
+    Customer enters their card details. PortOne validates the card with the PG provider (with `amount: 0`).
+  </Step>
+  
+  <Step title="Billing Key Issued">
+    PortOne returns a `customer_uid` token:
+    
+    ```javascript
+    IMP.request_pay({
+        // ... other params
+        customer_uid: 'bl_' + generateRandomString(),
+        amount: 0  // No charge for billing key issuance
+    }, function(rsp) {
+        if (rsp.success) {
+            // customer_uid is now issued and valid
+            document.getElementById('reference_id').value = rsp.customer_uid;
+        }
+    });
+    ```
+  </Step>
+  
+  <Step title="Store in Blesta">
+    The gateway validates and stores the billing key:
+    
+    ```php
+    // portone.php:508-567
+    public function storeCc(array $card_info, array $contact, $client_reference_id = null)
+    {
+        $customer_uid = $card_info['reference_id'] ?? $_POST['reference_id'] ?? null;
+        
+        if (!$this->validateCustomerUid($customer_uid)) {
+            $this->Input->setErrors(['billing_key' => ['failed' => '...']]);
+            return false;
+        }
+        
+        // Verify the billing key exists on PortOne
+        $response = $this->api->getBillingKey($customer_uid);
+        
+        if ($response === false) {
+            return false;
+        }
+        
+        return [
+            'client_reference_id' => $client_reference_id ?? $customer_uid,
+            'reference_id' => $customer_uid,  // This is the billing key
+            'last4' => $last4,
+            'type' => $card_type,
+        ];
+    }
+    ```
+  </Step>
+</Steps>
+
+### 2. Use (Recurring Payments)
+
+Once issued, the billing key is used for all subsequent payments:
+
+```php
+// portone_api.php:87-90
+public function payAgain(array $params)
+{
+    return $this->apiRequest('POST', '/subscribe/payments/again', $params);
+}
+```
+
+**Payment Request**:
+
+```php
+// portone.php:640-654
+$params = [
+    'customer_uid' => $account_reference_id,  // The billing key
+    'merchant_uid' => 'bl_' . bin2hex(random_bytes(12)),  // Unique transaction ID
+    'amount' => $requested_amount,
+    'name' => 'Blesta Payment',
+    'currency' => 'KRW',  // Optional
+    'channel_key' => '...'  // Optional
+];
+
+$response = $this->api->payAgain($params);
+```
+
+**Key Points**:
+
+- Customer doesn't need to be present
+- No browser interaction required
+- Charges happen server-to-server
+- Transaction is tracked by both `customer_uid` and `merchant_uid`
+
+### 3. Delete (Card Removal)
+
+Billing keys should be deleted when:
+
+- Customer removes their payment method
+- Card is being updated (delete old, create new)
+- Account is closed
+
+```php
+// portone.php:598-616
+public function removeCc($client_reference_id, $account_reference_id)
+{
+    $response = $this->api->deleteBillingKey($account_reference_id);
+    
+    if ($response === false) {
+        $this->logApiError($this->api->getLastError());
+        $this->Input->setErrors([
+            'billing_key' => [
+                'delete' => Language::_('Portone.!error.billing_key.delete', true),
+            ],
+        ]);
+        return false;
+    }
+    
+    return [
+        'client_reference_id' => $client_reference_id,
+        'reference_id' => $account_reference_id,
+    ];
+}
+```
+
+**API Call**:
+
+```php
+// portone_api.php:121-124
+public function deleteBillingKey($customer_uid)
+{
+    return $this->apiRequest('DELETE', '/subscribe/customers/' . urlencode($customer_uid));
+}
+```
+
+<Warning>
+  Always delete billing keys before issuing new ones. The `updateCc()` method deletes the old key first to prevent orphaned keys in PortOne's system (portone.php:579-589).
+</Warning>
+
+## Security Considerations
+
+### Input Validation
+
+The gateway validates billing keys before using them:
+
+```php
+// portone.php:272-283
+$customer_uid = $card_info['reference_id'] ?? $_POST['reference_id'] ?? null;
+
+if (!$this->validateCustomerUid($customer_uid)) {
+    $this->Input->setErrors([
+        'payment' => ['failed' => Language::_('Portone.!error.payment.failed', true)],
+    ]);
+    return $this->buildPaymentError();
+}
+```
+
+This prevents:
+
+- **Injection attacks** - Only alphanumeric + underscore allowed
+- **Unauthorized key usage** - Must match the expected format
+- **Parameter tampering** - Invalid formats are rejected before API calls
+
+### Why Validation Matters
+
+<Info>
+  The validation comment in the code explains: "Billing key (customer_uid) issued via JS SDK popup. $_POST fallback is required because Blesta's MerchantCcForm + MerchantCcOffsite combination does not always map custom hidden fields into $card_info reliably. Input is validated by validateCustomerUid() below (bl_ prefix + regex)." (portone.php:270-273)
+</Info>
+
+Even though billing keys come from a trusted source (PortOne JS SDK), validation is essential because:
+
+1. **Data source uncertainty** - Keys may come from `$card_info` or `$_POST`
+2. **Framework limitations** - Blesta's form handling isn't always reliable
+3. **Defense in depth** - Never trust input, even from internal systems
+
+### No Sensitive Data Storage
+
+<Check>
+  The gateway never stores actual card numbers, CVV codes, or expiration dates. Only the billing key, last 4 digits, and card type are stored locally.
+</Check>
+
+From the `storeCc()` method:
+
+```php
+// portone.php:561-567
+return [
+    'client_reference_id' => $client_reference_id ?? $customer_uid,
+    'reference_id' => $customer_uid,      // Billing key only
+    'last4' => $last4,                    // For display purposes
+    'expiration' => '',                   // Not stored
+    'type' => $card_type,                 // Card brand (Visa, MC, etc.)
+];
+```
+
+## Error Handling
+
+Common billing key errors:
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Billing key failed | Invalid format or doesn't exist | Re-register the card |
+| Billing key delete failed | Already deleted or network error | Check logs, retry if network issue |
+| Payment failed | Card declined or expired | Customer needs to update payment method |
+| Amount mismatch | Payment amount differs from request | Automatic cancellation, contact support |
+
+## Verification
+
+The gateway verifies billing keys exist before storing them:
+
+```php
+// portone.php:524-526
+// Verify the billing key exists on PortOne
+$response = $this->api->getBillingKey($customer_uid);
+```
+
+This API call:
+
+```php
+// portone_api.php:110-113
+public function getBillingKey($customer_uid)
+{
+    return $this->apiRequest('GET', '/subscribe/customers/' . urlencode($customer_uid));
+}
+```
+
+Returns billing key information including:
+
+- Card number (masked)
+- Card name/brand
+- PG provider
+- Issue date
+- Customer data
+
+## Related Topics
+
+- [Payment Flow](/concepts/payment-flow) - How billing keys are used in transactions
+- [Supported Providers](/concepts/supported-providers) - PG provider billing key support
+- [API Reference](/api/client/billing-keys) - Billing key API methods

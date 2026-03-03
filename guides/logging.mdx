@@ -1,0 +1,255 @@
+---
+title: Logging System
+description: File-based logging for payment transactions, errors, and API calls
+---
+
+## Overview
+
+The PortOne gateway includes a comprehensive file-based logging system that records all payment transactions, API errors, and important events. Logs are written to daily rotating files in a configurable directory.
+
+## Log File Format
+
+Log files are named using the pattern:
+
+```
+YYYYMMDD_Portone.log
+```
+
+**Examples:**
+- `20260224_Portone.log`
+- `20260225_Portone.log`
+- `20260226_Portone.log`
+
+A new log file is automatically created each day.
+
+## Log Entry Format
+
+Each log entry follows this format:
+
+```
+[YYYY-MM-DD HH:MM:SS] [LEVEL] message
+```
+
+**Example entries:**
+```
+[2026-02-24 15:30:00] [INFO] processCc OK | merchant_uid=bl_xxx | imp_uid=imp_xxx | amount=10000 | status=approved
+[2026-02-24 15:31:00] [ERROR] F0004:PG사 결제요청에 실패하여 중단합니다...
+```
+
+## Log Levels
+
+The gateway uses three log levels:
+
+### INFO
+
+Successful operations and normal events:
+
+- Payment processed successfully
+- Card stored successfully
+- Refund completed
+- Void completed
+
+**Example:**
+```
+[2026-02-24 15:30:00] [INFO] processCc OK | merchant_uid=bl_abc123 | imp_uid=imp_456789 | amount=10000 | status=approved
+[2026-02-24 15:31:00] [INFO] storeCc OK | customer_uid=bl_customer123 | last4=1234 | type=visa
+[2026-02-24 15:32:00] [INFO] refundCc OK | reference_id=bl_abc123 | transaction_id=imp_456789 | amount=5000
+```
+
+### ERROR
+
+API failures and PG errors:
+
+- Payment API call failed
+- Billing key registration failed
+- PG provider errors
+- Connection errors
+
+**Example:**
+```
+[2026-02-24 15:35:00] [ERROR] F0004:PG사 결제요청에 실패하여 중단합니다...
+[2026-02-24 15:36:00] [ERROR] Connection to payment server failed.
+```
+
+### WARN
+
+Warnings and unusual conditions (currently not used by the gateway, but available for future use).
+
+## The writeLog() Method
+
+```php
+private function writeLog($level, $message)
+{
+    $log_dir = $this->meta['log_path'] ?? '/var/www/logs_blesta';
+
+    if (empty($log_dir)) {
+        $log_dir = '/var/www/logs_blesta';
+    }
+
+    // Block path traversal
+    if (strpos($log_dir, '..') !== false) {
+        return;
+    }
+
+    // Ensure no trailing slash
+    $log_dir = rtrim($log_dir, '/');
+
+    // Resolve to real path and verify it's an absolute path
+    $real_dir = realpath($log_dir);
+    if ($real_dir === false) {
+        // Directory doesn't exist — try to create
+        @mkdir($log_dir, 0750, true);
+        $real_dir = realpath($log_dir);
+        if ($real_dir === false) {
+            return;
+        }
+    }
+
+    if (!is_dir($real_dir) || !is_writable($real_dir)) {
+        return;
+    }
+
+    $log_dir = $real_dir;
+
+    $filename = date('Ymd') . '_Portone.log';
+    $filepath = $log_dir . '/' . $filename;
+    $timestamp = date('Y-m-d H:i:s');
+    // Strip newlines/carriage returns to prevent log injection (forged log entries)
+    $safe_message = str_replace(["\r", "\n"], ' ', $message);
+    $line = "[{$timestamp}] [{$level}] {$safe_message}" . PHP_EOL;
+
+    @file_put_contents($filepath, $line, FILE_APPEND | LOCK_EX);
+}
+```
+
+**Location:** portone.php:837-878
+
+## Log Path Configuration
+
+The log directory is configured in the gateway settings:
+
+- **Default:** `/var/www/logs_blesta`
+- **Configurable:** Set in the gateway admin settings
+- **Auto-create:** The directory is automatically created if it doesn't exist (with 0750 permissions)
+
+### Path Validation
+
+The log path is validated during gateway configuration:
+
+```php
+$log_dir = rtrim(!empty($meta['log_path']) ? $meta['log_path'] : '/var/www/logs_blesta', '/');
+if (strpos($log_dir, '..') !== false) {
+    $rules['log_path'] = [
+        'valid' => [
+            'rule' => ['compares', '==', '__never_match__'],
+            'message' => Language::_('Portone.!error.log_path.not_found', true),
+        ],
+    ];
+} elseif (!is_dir($log_dir)) {
+    $rules['log_path'] = [
+        'valid' => [
+            'rule' => ['compares', '==', '__never_match__'],
+            'message' => Language::_('Portone.!error.log_path.not_found', true),
+        ],
+    ];
+} elseif (!is_writable($log_dir)) {
+    $rules['log_path'] = [
+        'valid' => [
+            'rule' => ['compares', '==', '__never_match__'],
+            'message' => Language::_('Portone.!error.log_path.not_writable', true),
+        ],
+    ];
+}
+```
+
+**Location:** portone.php:182-204
+
+This ensures:
+- No path traversal attacks (rejects paths containing `..`)
+- Directory exists
+- Directory is writable
+
+## Security: Log Injection Prevention
+
+The `writeLog()` method prevents log injection attacks by stripping newlines and carriage returns:
+
+```php
+// Strip newlines/carriage returns to prevent log injection (forged log entries)
+$safe_message = str_replace(["\r", "\n"], ' ', $message);
+$line = "[{$timestamp}] [{$level}] {$safe_message}" . PHP_EOL;
+```
+
+**Location:** portone.php:874-875
+
+This prevents an attacker from injecting fake log entries by including newline characters in error messages or other logged data.
+
+**Without sanitization, an attacker could inject:**
+```
+Fake error\n[2026-02-24 15:40:00] [INFO] Payment approved (FAKE)
+```
+
+**With sanitization, this becomes:**
+```
+[2026-02-24 15:40:00] [ERROR] Fake error [2026-02-24 15:40:00] [INFO] Payment approved (FAKE)
+```
+
+## Example Log Entries
+
+From the README.md:
+
+```
+[2026-02-24 15:30:00] [INFO] processCc OK | merchant_uid=bl_xxx | imp_uid=imp_xxx | amount=10000 | status=approved
+[2026-02-24 15:31:00] [ERROR] F0004:PG사 결제요청에 실패하여 중단합니다...
+```
+
+**Location:** README.md:100-102
+
+## Logging API Errors
+
+API errors are logged using the `logApiError()` method:
+
+```php
+private function logApiError($error)
+{
+    if (!empty($error)) {
+        $sanitized = strip_tags($error);
+        // Blesta gateway log
+        $this->log('portone', $sanitized, 'output', false);
+        // File log
+        $this->writeLog('ERROR', $sanitized);
+    }
+
+    return Language::_('Portone.!error.payment.generic', true);
+}
+```
+
+**Location:** portone.php:815-826
+
+This method:
+1. Sanitizes the error by stripping HTML tags
+2. Writes to both Blesta's internal gateway log
+3. Writes to the file-based log with ERROR level
+4. Returns a generic user-friendly error message
+
+Raw PG errors contain internal codes, HTML, and test-mode warnings that should never be shown to end users. The full detail is logged for debugging while callers set user-facing error messages separately.
+
+## File Permissions
+
+Log files are written with exclusive locks to prevent corruption:
+
+```php
+@file_put_contents($filepath, $line, FILE_APPEND | LOCK_EX);
+```
+
+- `FILE_APPEND` - Appends to the file instead of overwriting
+- `LOCK_EX` - Exclusive lock prevents simultaneous writes from corrupting the file
+
+## Daily Rotation
+
+Logs automatically rotate daily based on the filename:
+
+```php
+$filename = date('Ymd') . '_Portone.log';
+```
+
+Each day at 00:00:00, a new log file is created automatically. Old log files are preserved and can be archived or deleted manually.

@@ -1,0 +1,251 @@
+---
+title: Testing
+description: Learn how to test the PortOne Blesta Gateway with unit tests for validation, API client, and payment logic
+---
+
+The PortOne Blesta Gateway includes a comprehensive test suite that validates core functionality without requiring a full Blesta installation or live API calls.
+
+## Test Structure
+
+The test suite is organized in the `tests/` directory:
+
+```
+tests/
+├── bootstrap.php        # Blesta framework stubs
+├── PortoneTest.php      # Core validation and mapping tests
+└── PortoneApiTest.php   # API client and HTTP handling tests
+```
+
+## Test Bootstrap
+
+The `bootstrap.php` file provides minimal stubs for Blesta framework classes, allowing tests to run standalone without a full Blesta installation:
+
+- **MerchantGateway** - Base gateway class stub
+- **MerchantCc/MerchantCcOffsite/MerchantCcForm** - Interface stubs
+- **Loader** - Component loading stub
+- **Input** - Validation component stub
+- **Language** - Localization stub
+
+These stubs enable unit testing by simulating the Blesta environment without external dependencies.
+
+## Running Tests
+
+You can run the tests in two ways:
+
+### Standalone Execution
+
+Run tests directly with PHP (no PHPUnit required):
+
+```bash
+php tests/PortoneTest.php
+php tests/PortoneApiTest.php
+```
+
+### With PHPUnit
+
+If you have PHPUnit installed:
+
+```bash
+php vendor/bin/phpunit tests/PortoneTest.php
+php vendor/bin/phpunit tests/PortoneApiTest.php
+```
+
+## PortoneTest - Core Validation Tests
+
+Tests core validation and mapping logic using reflection to access private methods.
+
+### validateCustomerUid
+
+Tests customer UID validation with the required `bl_` prefix:
+
+**Valid cases:**
+- `bl_12345678` - Standard format
+- `bl_1234567890123_abcXYZ` - Alphanumeric with underscore
+- `bl_` + 60 characters - Maximum length
+- `bl_abcde` - Minimum length (5 chars after prefix)
+
+**Invalid cases:**
+- Empty or null values
+- Too short (< 5 chars after prefix)
+- Too long (> 60 chars after prefix)
+- Wrong prefix (not `bl_`)
+- Special characters or spaces
+- Newline injection attempts
+
+### mapPaymentStatus
+
+Tests PortOne status mapping to Blesta payment statuses:
+
+| PortOne Status | Blesta Status |
+|----------------|---------------|
+| `paid` | `approved` |
+| `ready` | `pending` |
+| `cancelled` | `void` |
+| `failed` | `declined` |
+| (unknown) | `error` |
+
+### detectCardType
+
+Tests card type detection from card numbers:
+
+| Pattern | Card Type |
+|---------|----------|
+| Starts with 4 | Visa |
+| Starts with 51-55 | MasterCard |
+| Starts with 34 or 37 | American Express |
+| Starts with 9 | Domestic (KR) |
+| Other patterns | Other |
+
+Handles cards with or without dashes (e.g., `4111-1111-1111-1111`).
+
+### validateAmount
+
+Tests payment amount validation:
+
+**Valid:**
+- Positive integers (e.g., `1000`)
+- Positive floats (e.g., `500.50`)
+- Minimum positive value (`0.01`)
+
+**Invalid:**
+- Zero or negative amounts
+- Non-numeric strings
+- Empty or null values
+
+## PortoneApiTest - API Client Tests
+
+Tests HTTP response handling and error parsing using a mock subclass that overrides `httpRequest()` to avoid real network calls.
+
+### Mock Implementation
+
+The `MockPortoneApi` class:
+- Extends `PortoneApi` with mocked HTTP responses
+- Logs all requests for verification
+- Simulates HTTP status codes (200, 429, 500, etc.)
+- Tests connection failures without real network calls
+
+### Payment Tests
+
+**payAgain (success)**
+- Mocks successful billing key payment
+- Verifies response structure and data
+- Checks `imp_uid`, `merchant_uid`, amount, and status
+
+**payAgain (API error)**
+- Simulates API error responses (code != 0)
+- Tests error message parsing
+- Validates "billing key not found" scenarios
+
+### HTTP Error Handling
+
+**Server errors (5xx)**
+- Returns `false` on HTTP 500+ responses
+- Sets user-friendly error message mentioning server issues
+
+**Rate limiting (429)**
+- Detects HTTP 429 responses
+- Returns error message about rate limits
+- Prompts user to retry later
+
+**Connection failures**
+- Simulates network connection failures
+- Returns error mentioning connection issues
+
+### Billing Key Operations
+
+**getBillingKey**
+- Tests GET request to `/subscribe/customers/{customer_uid}`
+- Verifies card information parsing
+- Validates response structure
+
+**deleteBillingKey**
+- Tests DELETE request to billing key endpoint
+- Verifies correct HTTP method usage
+- Checks successful deletion response
+
+### Refund Tests
+
+**cancelPayment**
+- Tests partial and full refunds
+- Verifies cancel amount matches request
+- Validates refund reason handling
+
+### Security Tests
+
+**Destructor clears sensitive data**
+- Verifies API keys are cleared on object destruction
+- Tests `imp_key` and `imp_secret` nullification
+- Ensures no sensitive data remains in memory
+
+## What Is Tested
+
+The test suite validates:
+
+<CardGroup cols={2}>
+  <Card title="Validation Logic" icon="check">
+    Customer UID format, payment amounts, card numbers, and data sanitization
+  </Card>
+  <Card title="API Client" icon="cloud">
+    HTTP requests, response parsing, authentication, and error handling
+  </Card>
+  <Card title="Status Mapping" icon="arrow-right-arrow-left">
+    PortOne payment statuses to Blesta-compatible status codes
+  </Card>
+  <Card title="Card Detection" icon="credit-card">
+    Card type identification from card numbers (Visa, MC, Amex, domestic)
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation">
+    API errors, HTTP failures, rate limits, and connection issues
+  </Card>
+  <Card title="Billing Keys" icon="key">
+    Billing key retrieval, deletion, and payment operations
+  </Card>
+</CardGroup>
+
+## Test Output
+
+When running tests, you'll see output like:
+
+```
+=== Portone Gateway Unit Tests ===
+
+--- validateCustomerUid ---
+  PASS: Valid UID: bl_12345678
+  PASS: Valid UID: alphanumeric with underscore
+  PASS: Reject null
+  PASS: Reject empty string
+  ...
+
+--- mapPaymentStatus ---
+  PASS: paid -> approved
+  PASS: ready -> pending
+  ...
+
+=== Results: 42 passed, 0 failed ===
+```
+
+## Extending Tests
+
+To add new tests:
+
+1. **Add test method** to the appropriate test class
+2. **Use reflection** to access private methods if needed
+3. **Mock HTTP responses** in `PortoneApiTest` for API tests
+4. **Use assert()** helper to verify conditions
+5. **Call new test** from the `run()` method
+
+Example:
+
+```php
+public function testNewFeature()
+{
+    echo "\n--- New Feature Test ---\n";
+    
+    $result = $this->invoke('newMethod', $param);
+    
+    $this->assert(
+        $result === 'expected',
+        'New feature returns expected value'
+    );
+}
+```

@@ -1,0 +1,90 @@
+---
+title: Installation
+description: Step-by-step guide to installing the PortOne Blesta Gateway module
+---
+
+# Installation
+
+This guide walks you through installing and setting up the PortOne payment gateway for Blesta.
+
+## Requirements
+
+Before installing the PortOne gateway, ensure your system meets these requirements:
+
+- **Blesta 5.x** - Compatible with Blesta version 5 and above
+- **PHP 7.4+** - Minimum PHP version 7.4 or higher
+- **PortOne V1 Account** - Active PortOne account with API credentials
+- **PG Contract** - Contract with a payment gateway provider that supports billing key payments (billing MID required)
+
+<Warning>
+You must have a billing-enabled MID (Merchant ID) from your PG provider. Standard MIDs may not support recurring billing key payments.
+</Warning>
+
+## Installation Steps
+
+<Steps>
+  <Step title="Copy Module Files">
+    Copy the PortOne gateway module to your Blesta installation directory:
+
+    ```bash
+    cp -r . /path/to/blesta/components/gateways/merchant/portone/
+    ```
+
+    Replace `/path/to/blesta` with your actual Blesta installation path.
+  </Step>
+
+  <Step title="Install Gateway in Blesta Admin">
+    Navigate to the Blesta admin panel and install the gateway:
+
+    **Settings → Payment Gateways → Available → PortOne → Install**
+
+    The gateway will appear in your available payment gateways list.
+  </Step>
+
+  <Step title="Configure Gateway Settings">
+    After installation, configure the gateway with your PortOne credentials and PG settings. See the [Configuration](/configuration) guide for detailed setup instructions.
+  </Step>
+</Steps>
+
+## Directory Structure
+
+The PortOne module is organized as follows:
+
+```
+portone/
+├── portone.php          # Main gateway class
+├── portone_api.php      # PortOne V1 REST API client
+├── config.json          # Module metadata
+├── language/
+│   ├── en_us/
+│   │   └── portone.php  # English translations
+│   └── ko_kr/
+│       └── portone.php  # Korean translations
+└── views/
+    └── default/
+        ├── settings.pdt # Admin settings form
+        └── cc_form.pdt  # Card registration form (JS SDK popup)
+```
+
+### Key Files
+
+- **portone.php** - Core gateway implementation with MerchantCc, MerchantCcOffsite, and MerchantCcForm interfaces
+- **portone_api.php** - REST API client for PortOne V1 endpoints
+- **config.json** - Module version, supported currencies (KRW), and metadata
+- **language/** - Localized strings for English and Korean
+- **views/** - Template files for admin settings and customer card registration forms
+
+## Post-Installation
+
+After installation, you'll need to:
+
+1. Obtain your PortOne merchant code (`imp_XXXXX`) from the PortOne console
+2. Generate REST API credentials (API Key and Secret)
+3. Configure your PG provider and billing MID
+4. Set up the log directory path
+
+<Note>
+The log directory defaults to `/var/www/logs_blesta`. Ensure this directory exists and is writable by your web server, or configure a custom path during setup.
+</Note>
+
+Proceed to the [Configuration](/configuration) guide to complete your gateway setup.

@@ -1,0 +1,214 @@
+---
+title: Changelog
+description: Version history and release notes for the PortOne Blesta Gateway
+---
+
+All notable changes to the PortOne Blesta Gateway are documented here.
+
+## Version 1.1.0
+
+<sub>Released February 26, 2026</sub>
+
+### Added
+
+<CardGroup cols={2}>
+  <Card title="Unit Tests" icon="flask">
+    - Unit tests for core validation logic (`validateCustomerUid`, `validateAmount`, `mapPaymentStatus`, `detectCardType`)
+    - Unit tests for API client with mock HTTP responses (success, error, 429, 5xx, connection failure, billing key operations)
+    - Test bootstrap with Blesta framework stubs for standalone test execution
+  </Card>
+  <Card title="Documentation" icon="book">
+    - CHANGELOG.md file for tracking version history
+  </Card>
+</CardGroup>
+
+### Changed
+
+**Code improvements:**
+- `sanitizeErrorMessage()` renamed to `logApiError()` for clarity (method only logs, callers set user-facing errors separately)
+- `httpRequest()` visibility changed from `private` to `protected` to enable test mocking
+- Implicit nullable parameters updated to explicit `?type` syntax (PHP 8.4+ compatibility)
+- English language file (`en_us/portone.php`) translated from Korean to proper English
+
+**API integration:**
+- V1 SDK JS: always use `pg` parameter instead of `channelKey` (V2-only feature)
+
+### Fixed
+
+**Critical fixes:**
+- `removeCc` now calls `setErrors()` and `logApiError()` on failure (was silently returning false)
+- `updateCc` aborts if `removeCc` fails, preventing orphan billing keys on PortOne
+
+**Error handling:**
+- Log injection vulnerability: newline/carriage return characters stripped from log messages
+- 429 rate limit responses now handled explicitly in API client
+
+### Security
+
+**Documentation and hardening:**
+- `$_POST` fallback usage documented with rationale (Blesta MerchantCcForm limitation)
+- Dummy card number in `cc_form.pdt` documented with PHPDoc explaining why it exists
+
+---
+
+## Version 1.0.0
+
+<sub>Released February 26, 2026</sub>
+
+Initial release of the PortOne Blesta Payment Gateway.
+
+### Added
+
+**Core Payment Features:**
+- PortOne V1 API integration for Blesta (MerchantCc, MerchantCcOffsite, MerchantCcForm)
+- One-time and recurring (billing key) credit card payments via JS SDK popup
+- Payment amount verification with automatic cancellation on mismatch
+- Refund balance validation (prevents over-refund)
+
+**Logging and Monitoring:**
+- File-based logging with configurable path and log injection prevention
+- Blesta gateway log integration with raw error sanitization
+- Log path validation on settings save (existence + write permission check)
+- Path traversal prevention for log directory
+
+**Validation and Security:**
+- Customer UID format validation (`bl_` prefix + regex)
+- Card type detection (Visa, MasterCard, Amex, domestic KR)
+- API token auto-refresh with 401 retry
+- SSL/TLS verification enforced on all API calls
+- Sensitive fields (imp_code, imp_key, imp_secret, channel_key) encrypted via Blesta
+- API error messages sanitized before user display (raw logged internally)
+
+**Localization:**
+- Korean (ko_kr) and English (en_us) language support
+
+**Licensing:**
+- AGPL v3.0 license
+
+---
+
+## Version History
+
+| Version | Release Date | Highlights |
+|---------|-------------|------------|
+| 1.1.0 | 2026-02-26 | Unit tests, bug fixes, PHP 8.4 compatibility |
+| 1.0.0 | 2026-02-26 | Initial release with PortOne V1 integration |
+
+---
+
+## Upgrade Guide
+
+### Upgrading from 1.0.0 to 1.1.0
+
+<Steps>
+  <Step title="Backup your installation">
+    ```bash
+    cp -r /path/to/blesta/components/gateways/merchant/portone /backup/portone-1.0.0
+    ```
+  </Step>
+  
+  <Step title="Replace files">
+    ```bash
+    cp -r portone-1.1.0/* /path/to/blesta/components/gateways/merchant/portone/
+    ```
+  </Step>
+  
+  <Step title="Clear cache">
+    Clear Blesta cache if enabled:
+    ```bash
+    rm -rf /path/to/blesta/cache/*
+    ```
+  </Step>
+  
+  <Step title="Test the upgrade">
+    - Log in to Blesta admin panel
+    - Navigate to Settings → Payment Gateways → Installed
+    - Verify PortOne gateway is active
+    - Test card registration with test credentials
+    - Test recurring payment processing
+  </Step>
+  
+  <Step title="Run unit tests (optional)">
+    ```bash
+    cd /path/to/blesta/components/gateways/merchant/portone
+    php tests/PortoneTest.php
+    php tests/PortoneApiTest.php
+    ```
+  </Step>
+</Steps>
+
+**What to watch for:**
+- No breaking changes in v1.1.0
+- All existing configurations will continue to work
+- Billing keys remain valid after upgrade
+- Improved error messages in logs
+
+---
+
+## Breaking Changes
+
+No breaking changes have been introduced in any version yet.
+
+---
+
+## Deprecated Features
+
+No features have been deprecated yet.
+
+---
+
+## Known Issues
+
+### Version 1.1.0
+- None reported
+
+### Version 1.0.0
+- Silent failures in `removeCc` (fixed in 1.1.0)
+- Orphan billing keys on update failure (fixed in 1.1.0)
+- Log injection vulnerability (fixed in 1.1.0)
+
+---
+
+## Future Plans
+
+Upcoming features and improvements:
+
+<CardGroup cols={2}>
+  <Card title="PortOne V2 Support" icon="rocket">
+    Add support for PortOne V2 API alongside V1
+  </Card>
+  <Card title="Additional PG Providers" icon="building">
+    Test and document more PG providers beyond KG Inicis
+  </Card>
+  <Card title="Webhook Support" icon="webhook">
+    Add webhook endpoint for real-time payment notifications
+  </Card>
+  <Card title="Enhanced Logging" icon="chart-line">
+    Add structured logging with log levels and rotation
+  </Card>
+</CardGroup>
+
+---
+
+## Contributing
+
+The PortOne Blesta Gateway is open source under AGPL v3.0. Contributions are welcome:
+
+- Report bugs and issues
+- Submit pull requests
+- Improve documentation
+- Add translations
+
+---
+
+## Support
+
+For version-specific support:
+
+- **Technical issues**: Check the [Troubleshooting guide](/advanced/troubleshooting)
+- **API questions**: Refer to [PortOne V1 API documentation](https://api.iamport.kr)
+- **PG issues**: Contact your payment gateway provider
+
+---
+
+<sub>Last updated: February 26, 2026</sub>

@@ -1,0 +1,282 @@
+---
+title: Refunds and Voids
+description: Cancel payments completely or issue partial refunds using the PortOne API
+---
+
+## Overview
+
+The PortOne gateway supports two types of payment cancellation:
+
+- **Void (voidCc)** - Full cancellation of a payment
+- **Refund (refundCc)** - Full or partial refund with balance validation
+
+## Void Payment - voidCc()
+
+A void completely cancels a payment without specifying an amount. This is typically used to cancel a payment in full.
+
+```php
+public function voidCc($reference_id, $transaction_id)
+{
+    $params = ['reason' => 'Voided by Blesta'];
+
+    if ($transaction_id) {
+        $params['imp_uid'] = $transaction_id;
+    } else {
+        $params['merchant_uid'] = $reference_id;
+    }
+
+    $response = $this->api->cancelPayment($params);
+
+    if ($response === false) {
+        $this->logApiError($this->api->getLastError());
+        $this->Input->setErrors([
+            'refund' => [
+                'failed' => Language::_('Portone.!error.refund.failed', true),
+            ],
+        ]);
+        return [
+            'status' => 'error',
+            'reference_id' => $reference_id,
+            'transaction_id' => $transaction_id,
+        ];
+    }
+
+    $this->writeLog('INFO', sprintf(
+        'voidCc OK | reference_id=%s | transaction_id=%s',
+        $reference_id,
+        $transaction_id ?? ''
+    ));
+
+    return [
+        'status' => 'void',
+        'reference_id' => $reference_id,
+        'transaction_id' => $transaction_id,
+    ];
+}
+```
+
+**Location:** portone.php:380-417
+
+### Parameters
+
+- `reference_id` - The merchant UID (generated with `bl_` prefix)
+- `transaction_id` - The PortOne imp_uid (if available)
+
+### Behavior
+
+- If `transaction_id` is provided, it's used to identify the payment
+- Otherwise, `reference_id` (merchant_uid) is used as a fallback
+- The entire payment is cancelled without specifying an amount
+- Returns status `void` on success
+
+## Refund Payment - refundCc()
+
+A refund cancels all or part of a payment with amount validation and refundable balance checking.
+
+```php
+public function refundCc($reference_id, $transaction_id, $amount)
+{
+    if (!$this->validateAmount($amount)) {
+        return [
+            'status' => 'error',
+            'reference_id' => $reference_id,
+            'transaction_id' => $transaction_id,
+        ];
+    }
+
+    $refund_amount = (int) round((float) $amount);
+
+    // Verify refund amount against original payment's refundable balance
+    if ($transaction_id) {
+        $payment_info = $this->api->getPayment($transaction_id);
+        if ($payment_info && isset($payment_info['response'])) {
+            $paid = (int) ($payment_info['response']['amount'] ?? 0);
+            $already_cancelled = (int) ($payment_info['response']['cancel_amount'] ?? 0);
+            $refundable = $paid - $already_cancelled;
+            if ($refund_amount > $refundable) {
+                $this->Input->setErrors([
+                    'refund' => ['exceeded' => Language::_('Portone.!error.refund.exceeded', true)],
+                ]);
+                return [
+                    'status' => 'error',
+                    'reference_id' => $reference_id,
+                    'transaction_id' => $transaction_id,
+                ];
+            }
+        }
+    }
+
+    $params = [
+        'reason' => 'Refunded by Blesta',
+        'amount' => $refund_amount,
+    ];
+
+    if ($transaction_id) {
+        $params['imp_uid'] = $transaction_id;
+    } else {
+        $params['merchant_uid'] = $reference_id;
+    }
+
+    $response = $this->api->cancelPayment($params);
+
+    if ($response === false) {
+        $this->logApiError($this->api->getLastError());
+        $this->Input->setErrors([
+            'refund' => [
+                'failed' => Language::_('Portone.!error.refund.failed', true),
+            ],
+        ]);
+        return [
+            'status' => 'error',
+            'reference_id' => $reference_id,
+            'transaction_id' => $transaction_id,
+        ];
+    }
+
+    $this->writeLog('INFO', sprintf(
+        'refundCc OK | reference_id=%s | transaction_id=%s | amount=%d',
+        $reference_id,
+        $transaction_id ?? '',
+        $refund_amount
+    ));
+
+    return [
+        'status' => 'refunded',
+        'reference_id' => $reference_id,
+        'transaction_id' => $transaction_id,
+    ];
+}
+```
+
+**Location:** portone.php:427-498
+
+### Parameters
+
+- `reference_id` - The merchant UID
+- `transaction_id` - The PortOne imp_uid (if available)
+- `amount` - The amount to refund
+
+### Refund Balance Validation
+
+Before processing a refund, the gateway verifies the refundable balance:
+
+```php
+if ($transaction_id) {
+    $payment_info = $this->api->getPayment($transaction_id);
+    if ($payment_info && isset($payment_info['response'])) {
+        $paid = (int) ($payment_info['response']['amount'] ?? 0);
+        $already_cancelled = (int) ($payment_info['response']['cancel_amount'] ?? 0);
+        $refundable = $paid - $already_cancelled;
+        if ($refund_amount > $refundable) {
+            $this->Input->setErrors([
+                'refund' => ['exceeded' => Language::_('Portone.!error.refund.exceeded', true)],
+            ]);
+            return [
+                'status' => 'error',
+                'reference_id' => $reference_id,
+                'transaction_id' => $transaction_id,
+            ];
+        }
+    }
+}
+```
+
+**Location:** portone.php:440-456
+
+This prevents over-refunding by calculating:
+
+- `paid` - Original payment amount
+- `already_cancelled` - Total amount already refunded
+- `refundable` - Remaining balance available for refund
+
+If the requested refund exceeds the refundable balance, an error is returned.
+
+### Full vs Partial Refunds
+
+- **Full Refund:** Set `amount` to the original payment amount
+- **Partial Refund:** Set `amount` to any value less than the refundable balance
+- **Multiple Partial Refunds:** Supported - the balance is checked each time
+
+## Difference Between Void and Refund
+
+| Feature | voidCc() | refundCc() |
+|---------|----------|------------|
+| Amount parameter | No | Yes (required) |
+| Partial cancellation | No (full only) | Yes |
+| Balance validation | No | Yes |
+| Use case | Cancel entire payment | Full or partial refund |
+| Status returned | `void` | `refunded` |
+
+## API Endpoint
+
+Both methods use the same PortOne API endpoint:
+
+```php
+public function cancelPayment(array $params)
+{
+    return $this->apiRequest('POST', '/payments/cancel', $params);
+}
+```
+
+**Location:** portone_api.php:143-146
+
+### Request Parameters
+
+**For void:**
+```json
+{
+    "imp_uid": "imp_1234567890",
+    "reason": "Voided by Blesta"
+}
+```
+
+**For refund:**
+```json
+{
+    "imp_uid": "imp_1234567890",
+    "amount": 5000,
+    "reason": "Refunded by Blesta"
+}
+```
+
+## Stored Card Transactions
+
+Transactions made with stored cards can also be voided or refunded:
+
+```php
+public function voidStoredCc($client_reference_id, $account_reference_id, $reference_id, $transaction_id)
+{
+    return $this->voidCc($reference_id, $transaction_id);
+}
+
+public function refundStoredCc($client_reference_id, $account_reference_id, $reference_id, $transaction_id, $amount)
+{
+    return $this->refundCc($reference_id, $transaction_id, $amount);
+}
+```
+
+**Location:** portone.php:748-766
+
+These methods simply delegate to the standard void and refund methods, as the cancellation process is identical regardless of how the payment was initiated.
+
+## Error Handling
+
+All refund/void errors are logged with full details:
+
+```php
+if ($response === false) {
+    $this->logApiError($this->api->getLastError());
+    $this->Input->setErrors([
+        'refund' => [
+            'failed' => Language::_('Portone.!error.refund.failed', true),
+        ],
+    ]);
+    return [
+        'status' => 'error',
+        'reference_id' => $reference_id,
+        'transaction_id' => $transaction_id,
+    ];
+}
+```
+
+Raw PG errors are sanitized in `logApiError()` to prevent exposing internal codes or technical details to end users.

@@ -1,0 +1,194 @@
+---
+title: 'Authentication'
+description: 'Access token management and authentication methods'
+---
+
+## Overview
+
+The PortoneApi class handles authentication automatically using the PortOne V1 REST API token-based authentication system. Access tokens are obtained using your API credentials and are automatically managed by the client.
+
+## getAccessToken()
+
+Get or refresh the access token for authenticated API requests.
+
+```php
+public function getAccessToken()
+```
+
+### Returns
+
+<ResponseField name="return" type="string|false">
+  Returns the access token string on success, or `false` on failure
+</ResponseField>
+
+### Behavior
+
+1. **Token caching**: If a valid token exists and hasn't expired, it's returned immediately
+2. **60-second buffer**: Tokens are considered expired 60 seconds before their actual expiration time
+3. **Automatic refresh**: If the token is expired or doesn't exist, a new token is requested
+4. **Error handling**: If token retrieval fails, returns `false` and sets the last error message
+
+### Implementation Details
+
+From `portone_api.php:44-68`:
+
+```php
+public function getAccessToken()
+{
+    // Return cached token if still valid (with 60s buffer)
+    if ($this->access_token && time() < ($this->token_expires_at - 60)) {
+        return $this->access_token;
+    }
+
+    // Clear expired token
+    $this->access_token = null;
+    $this->token_expires_at = 0;
+
+    $response = $this->httpRequest('POST', '/users/getToken', [
+        'imp_key' => $this->imp_key,
+        'imp_secret' => $this->imp_secret,
+    ], false);
+
+    if ($response && isset($response['response']['access_token'])) {
+        $this->access_token = $response['response']['access_token'];
+        $this->token_expires_at = (int) $response['response']['expired_at'];
+        return $this->access_token;
+    }
+
+    $this->last_error = $response['message'] ?? 'Failed to obtain access token';
+    return false;
+}
+```
+
+### API Endpoint
+
+**POST** `/users/getToken`
+
+### Request Body
+
+```json
+{
+  "imp_key": "your_api_key",
+  "imp_secret": "your_api_secret"
+}
+```
+
+### Response
+
+```json
+{
+  "code": 0,
+  "message": null,
+  "response": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expired_at": 1234567890,
+    "now": 1234567830
+  }
+}
+```
+
+<ResponseField name="response.access_token" type="string">
+  JWT access token for authenticated API requests
+</ResponseField>
+
+<ResponseField name="response.expired_at" type="integer">
+  Unix timestamp when the token expires
+</ResponseField>
+
+<ResponseField name="response.now" type="integer">
+  Current server time as Unix timestamp
+</ResponseField>
+
+## Token Expiration Handling
+
+The 60-second buffer ensures that tokens are refreshed before they actually expire, preventing failed API calls due to expired tokens.
+
+```php
+if ($this->access_token && time() < ($this->token_expires_at - 60)) {
+    return $this->access_token;
+}
+```
+
+This means:
+- If token expires at 12:00:00, it will be considered expired at 11:59:00
+- This prevents race conditions where a token expires between validation and use
+
+## 401 Retry Logic
+
+All authenticated API requests automatically handle 401 Unauthorized responses by clearing the token and retrying once.
+
+From `portone_api.php:166-196`:
+
+```php
+private function apiRequest($method, $endpoint, array $params = [])
+{
+    $token = $this->getAccessToken();
+    if ($token === false) {
+        return false;
+    }
+
+    $response = $this->httpRequest($method, $endpoint, $params, true);
+
+    // If 401 Unauthorized, clear token and retry once
+    if ($response === false && $this->last_http_code === 401) {
+        $this->access_token = null;
+        $this->token_expires_at = 0;
+        $token = $this->getAccessToken();
+        if ($token === false) {
+            return false;
+        }
+        $response = $this->httpRequest($method, $endpoint, $params, true);
+    }
+
+    if ($response === false) {
+        return false;
+    }
+
+    if (isset($response['code']) && $response['code'] !== 0) {
+        $this->last_error = $response['message'] ?? 'Unknown API error';
+        return false;
+    }
+
+    return $response;
+}
+```
+
+### Retry Flow
+
+1. Get access token (from cache or by requesting new one)
+2. Make API request with token
+3. If response is 401 Unauthorized:
+   - Clear cached token
+   - Request new token
+   - Retry the same request once with new token
+4. If still fails or non-401 error, return false
+
+## Usage Example
+
+You typically don't need to call `getAccessToken()` directly. The class handles authentication automatically:
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+// Authentication happens automatically
+$result = $api->getPayment('imp_123456789');
+
+if ($result === false) {
+    echo "Error: " . $api->getLastError();
+}
+```
+
+## Manual Token Management
+
+If you need to explicitly obtain a token:
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+$token = $api->getAccessToken();
+
+if ($token === false) {
+    echo "Authentication failed: " . $api->getLastError();
+} else {
+    echo "Access token: " . $token;
+}
+```

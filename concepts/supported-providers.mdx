@@ -1,0 +1,267 @@
+---
+title: Supported Payment Providers
+description: List of PG providers supported by the PortOne Blesta Gateway
+---
+
+The PortOne Blesta Gateway supports multiple payment gateway (PG) providers through PortOne's V1 API. All providers that support billing key (subscription) payments can be used with this gateway.
+
+## Overview
+
+<Info>
+  The gateway was developed and tested with **KG Inicis** (`html5_inicis`), but PortOne's architecture allows any billing-key-compatible PG provider to be used by simply changing the configuration.
+</Info>
+
+## Supported Providers
+
+The following PG providers are validated in the gateway configuration:
+
+### Korean Domestic Providers
+
+| Provider | pg_provider Value | Billing Key Support | Status |
+|----------|-------------------|---------------------|--------|
+| **KG Inicis** | `html5_inicis` | ✅ Yes | ✅ Tested |
+| Nice Payments | `nice` | ✅ Yes | ⚠️ Requires testing |
+| Nice Payments V2 | `nice_v2` | ✅ Yes | ⚠️ Requires testing |
+| NHN KCP | `kcp` | ✅ Yes | ⚠️ Requires testing |
+| NHN KCP Billing | `kcp_billing` | ✅ Yes | ⚠️ Requires testing |
+| Danal | `danal` | ✅ Yes | ⚠️ Requires testing |
+| Danal TPay | `danal_tpay` | ✅ Yes | ⚠️ Requires testing |
+| KICC | `kicc` | ✅ Yes | ⚠️ Requires testing |
+| KSNET | `ksnet` | ✅ Yes | ⚠️ Requires testing |
+| Smartro V2 | `smartro_v2` | ✅ Yes | ⚠️ Requires testing |
+| Welcome Payments | `welcome` | ✅ Yes | ⚠️ Requires testing |
+| Daou (Kiwoompay) | `daou` | ✅ Yes | ⚠️ Requires testing |
+| Settle Bank | `settle` | ✅ Yes | ⚠️ Requires testing |
+
+### Simple Payment Services
+
+| Provider | pg_provider Value | Notes |
+|----------|-------------------|-------|
+| Toss Pay V2 | `tosspay_v2` | Limited billing key support |
+| Kakao Pay | `kakaopay` | Limited billing key support |
+| Naver Pay | `naverpay` | Limited billing key support |
+| Payco | `payco` | Limited billing key support |
+
+<Warning>
+  Simple payment services (Kakao Pay, Naver Pay, etc.) have limited support for billing keys. Check PortOne's documentation for current compatibility.
+</Warning>
+
+## Configuration Validation
+
+The gateway validates the selected provider during setup:
+
+```php
+// portone.php:165-178
+'pg_provider' => [
+    'valid' => [
+        'rule' => [
+            'in_array',
+            [
+                'html5_inicis', 'nice', 'nice_v2', 'kcp', 'kcp_billing',
+                'danal_tpay', 'danal', 'kicc', 'ksnet', 'smartro_v2',
+                'welcome', 'daou', 'settle', 'tosspay_v2',
+                'kakaopay', 'naverpay', 'payco',
+            ],
+        ],
+        'message' => Language::_('Portone.!error.pg_provider.empty', true),
+    ],
+],
+```
+
+Only these validated providers can be used with the gateway.
+
+## Default Provider
+
+The gateway uses **KG Inicis** (`html5_inicis`) as the default provider:
+
+- **Official name**: KG이니시스 (KG Inicis)
+- **Market position**: Leading Korean payment gateway
+- **Test environment**: Available with test MID
+- **Billing key support**: Full support for recurring payments
+- **Documentation**: Extensive PortOne integration docs
+
+## Provider Requirements
+
+Each PG provider has different requirements for billing key support:
+
+### 1. Merchant ID (MID)
+
+<Warning>
+  You must have a **billing-enabled MID** from your PG provider. Regular payment MIDs may not support billing key issuance.
+</Warning>
+
+In the gateway settings:
+
+```
+PG 상점아이디 (MID): INIBillTst  // Example for KG Inicis test MID
+```
+
+### 2. PortOne Channel Configuration
+
+Each provider requires channel setup in the PortOne console:
+
+1. Login to [PortOne Console](https://admin.iamport.kr)
+2. Navigate to **Systems → PG Settings**
+3. Select your PG provider
+4. Enter your billing-enabled MID
+5. Configure authentication keys (provided by PG)
+6. Enable billing key features
+
+### 3. PG Provider Contract
+
+You need a direct contract with the PG provider:
+
+- Business registration
+- Banking information
+- Service category approval
+- Billing payment service activation
+
+<Info>
+  Contract requirements vary by provider and business type. Contact your PG provider's sales team for details.
+</Info>
+
+## Testing Requirements
+
+### KG Inicis Test Environment
+
+KG Inicis provides a test MID for development:
+
+- **Test MID**: `INIBillTst`
+- **Test cards**: Special card numbers provided by Inicis
+- **Amount limits**: Usually limited to small amounts in test mode
+- **Environment**: Separate test API endpoint
+
+### Testing Other Providers
+
+<Note>
+  From README.md: "PG사별로 빌링키 발급 방식과 테스트 MID가 다릅니다. 포트원 문서를 참고하세요." (Each PG provider has different billing key issuance methods and test MIDs. Refer to PortOne documentation.)
+</Note>
+
+Each provider has:
+
+- Different test card numbers
+- Different test MID formats  
+- Different validation rules
+- Different error codes
+
+**Before switching providers**, consult:
+
+1. [PortOne Documentation](https://docs.iamport.kr)
+2. Your PG provider's technical documentation
+3. PortOne support for integration guidance
+
+## Switching Providers
+
+To change your PG provider:
+
+<Steps>
+  <Step title="Obtain Billing-Enabled MID">
+    Contract with the new PG provider and request a billing payment (subscription) MID.
+  </Step>
+  
+  <Step title="Configure PortOne Channel">
+    Add the new PG provider in PortOne console with your MID and authentication keys.
+  </Step>
+  
+  <Step title="Update Gateway Settings">
+    In Blesta admin panel:
+    
+    **Settings → Payment Gateways → PortOne → Manage**
+    
+    Change:
+    - **PG사**: Select new provider from dropdown
+    - **PG 상점아이디 (MID)**: Enter new MID
+    - **채널 키**: Enter channel key from PortOne console (if using multiple channels)
+  </Step>
+  
+  <Step title="Test in Sandbox">
+    Test card registration and payments with test cards provided by the new PG.
+  </Step>
+  
+  <Step title="Monitor Production">
+    After going live, monitor logs at the configured log path for any PG-specific errors.
+  </Step>
+</Steps>
+
+<Warning>
+  Existing billing keys are tied to the PG provider they were issued with. Switching providers requires customers to re-register their cards.
+</Warning>
+
+## Provider-Specific Features
+
+Different providers may have:
+
+### Payment Methods
+
+- Card payments (all providers)
+- Bank transfers (some providers)
+- Mobile carrier billing (Danal, etc.)
+- Simple payment integration (varies)
+
+### Regional Support
+
+- Domestic cards only (most Korean providers)
+- International cards (KG Inicis, Nice, KCP)
+- Multi-currency (limited providers)
+
+### Additional Services
+
+- Installment payments
+- Interest-free installments
+- Card benefit integration
+- Fraud detection
+
+## Channel Keys
+
+PortOne supports multiple channels per account:
+
+```php
+// portone.php:298-300
+if (!empty($this->meta['channel_key'])) {
+    $params['channel_key'] = $this->meta['channel_key'];
+}
+```
+
+**Use channel keys when**:
+
+- You have multiple MIDs for different services
+- You need separate reporting per service
+- You want to test different PG configurations
+
+**Leave blank when**:
+
+- You have only one PG configuration
+- You want to use the default channel
+
+## Error Messages
+
+PG provider errors are sanitized before showing to users:
+
+```php
+// portone.php:815-825
+private function logApiError($error)
+{
+    if (!empty($error)) {
+        $sanitized = strip_tags($error);
+        // Log raw error for debugging
+        $this->writeLog('ERROR', $sanitized);
+    }
+    
+    // Return generic error to user
+    return Language::_('Portone.!error.payment.generic', true);
+}
+```
+
+Raw PG errors (which may contain internal codes, test mode warnings, or HTML) are logged but users see only:
+
+- "Payment processing failed"
+- "Card registration failed"
+- "Refund failed"
+
+Check your log files for detailed PG error messages.
+
+## Related Topics
+
+- [Configuration](/configuration) - How to configure PG settings
+- [Payment Flow](/concepts/payment-flow) - How payments work with different PGs
+- [Billing Keys](/concepts/billing-keys) - How billing keys differ per provider

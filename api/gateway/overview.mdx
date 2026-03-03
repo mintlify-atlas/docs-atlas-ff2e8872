@@ -1,0 +1,154 @@
+---
+title: Gateway Class Overview
+description: Overview of the PortOne gateway class structure and core functionality
+---
+
+## Class Definition
+
+The PortOne gateway class integrates with PortOne V1 API (formerly iamport) to process credit card payments via KG이니시스 (html5_inicis).
+
+```php
+class Portone extends MerchantGateway implements MerchantCc, MerchantCcOffsite, MerchantCcForm
+```
+
+## Purpose and Capabilities
+
+The gateway provides:
+
+- **One-time payments** - Process immediate credit card payments via JS SDK popup
+- **Recurring payments** - Automatic billing using stored billing keys
+- **Card storage** - Issue and manage billing keys for recurring subscriptions
+- **Refunds and voids** - Full and partial refund support
+- **Custom payment form** - Browser-based payment popup using PortOne JS SDK
+
+## Interfaces Implemented
+
+### MerchantCc
+Direct credit card payment processing methods:
+- `processCc()` - Process one-time payment
+- `authorizeCc()` - Authorize payment
+- `captureCc()` - Capture authorization (not supported)
+- `voidCc()` - Void/cancel payment
+- `refundCc()` - Refund payment
+- `storeCc()` - Store card and issue billing key
+- `updateCc()` - Update stored card
+- `removeCc()` - Remove stored card
+
+### MerchantCcOffsite
+Stored billing key payment methods:
+- `processStoredCc()` - Process payment with billing key
+- `authorizeStoredCc()` - Authorize with billing key
+- `captureStoredCc()` - Capture stored authorization (not supported)
+- `voidStoredCc()` - Void stored card payment
+- `refundStoredCc()` - Refund stored card payment
+
+### MerchantCcForm
+Custom payment form methods:
+- `buildCcForm()` - Render PortOne JS SDK payment popup form
+- `buildPaymentConfirmation()` - Payment confirmation (empty - not required)
+
+## Constructor and Initialization
+
+```php
+public function __construct()
+```
+
+The constructor:
+1. Loads gateway configuration from `config.json`
+2. Loads the Input component for validation
+3. Loads language files from the `language/` directory
+
+Configuration is set later via `setMeta()` which initializes the API client.
+
+## Meta Configuration
+
+```php
+public function setMeta(?array $meta = null)
+```
+
+Sets gateway configuration and initializes the PortOne API client.
+
+<ParamField path="meta" type="array">
+  Gateway configuration settings
+  
+  <ParamField path="imp_code" type="string" required>
+    PortOne merchant code (가맹점 식별코드)
+  </ParamField>
+  
+  <ParamField path="imp_key" type="string" required>
+    API key (REST API 키)
+  </ParamField>
+  
+  <ParamField path="imp_secret" type="string" required>
+    API secret (REST API Secret)
+  </ParamField>
+  
+  <ParamField path="pg_provider" type="string" required>
+    Payment gateway provider code (e.g., `html5_inicis`, `nice`, `kcp`)
+  </ParamField>
+  
+  <ParamField path="channel_key" type="string">
+    Channel key for V2 API compatibility (optional)
+  </ParamField>
+  
+  <ParamField path="log_path" type="string">
+    Directory path for log files (defaults to `/var/www/logs_blesta`)
+  </ParamField>
+</ParamField>
+
+**Example:**
+```php
+$gateway->setMeta([
+    'imp_code' => 'imp12345678',
+    'imp_key' => 'your_api_key',
+    'imp_secret' => 'your_api_secret',
+    'pg_provider' => 'html5_inicis',
+    'log_path' => '/var/www/logs_blesta'
+]);
+```
+
+## Currency Configuration
+
+```php
+public function setCurrency($currency)
+```
+
+Sets the ISO 4217 currency code for all subsequent payments.
+
+<ParamField path="currency" type="string">
+  ISO 4217 currency code (e.g., `KRW`, `USD`)
+</ParamField>
+
+**Example:**
+```php
+$gateway->setCurrency('KRW');
+```
+
+## Storage Requirements
+
+```php
+public function requiresCcStorage()
+```
+
+Returns `true` - This gateway requires card storage (billing keys) for processing payments.
+
+```php
+public function requiresCustomerPresent()
+```
+
+Returns `false` - Allows automatic recurring payments without customer interaction.
+
+## Encrypted Fields
+
+```php
+public function encryptableFields()
+```
+
+Returns fields that should be encrypted when stored in the database:
+
+<ResponseField name="encryptableFields" type="array">
+  - `imp_code`
+  - `imp_key`
+  - `imp_secret`
+  - `channel_key`
+</ResponseField>

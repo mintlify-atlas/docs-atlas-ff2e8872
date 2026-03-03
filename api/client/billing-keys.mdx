@@ -1,0 +1,322 @@
+---
+title: 'Billing Key Methods'
+description: 'Methods for managing billing keys for recurring payments'
+---
+
+## Overview
+
+Billing keys enable recurring payments by storing card information securely with PortOne. Instead of storing sensitive card data, you store a `customer_uid` and use it to process future payments.
+
+## issueBillingKey()
+
+Issue a new billing key for recurring payments by registering card information.
+
+```php
+public function issueBillingKey($customer_uid, array $params)
+```
+
+### Parameters
+
+<ParamField path="customer_uid" type="string" required>
+  Unique identifier for the customer's billing key. This is used to reference the billing key in future payment requests. Use a format like `customer_{id}` or `gw_{id}`.
+</ParamField>
+
+<ParamField path="params" type="array" required>
+  Array of card and payment gateway parameters
+</ParamField>
+
+<ParamField path="params.card_number" type="string" required>
+  Credit card number (without spaces or dashes)
+</ParamField>
+
+<ParamField path="params.expiry" type="string" required>
+  Card expiration date in YYYY-MM format (e.g., "2025-12")
+</ParamField>
+
+<ParamField path="params.birth" type="string" required>
+  Cardholder's birth date (6 digits: YYMMDD) or business registration number (10 digits)
+</ParamField>
+
+<ParamField path="params.pwd_2digit" type="string" required>
+  First 2 digits of card password
+</ParamField>
+
+<ParamField path="params.pg" type="string" required>
+  Payment gateway identifier (e.g., "nice", "kcp", "danal")
+</ParamField>
+
+<ParamField path="params.customer_name" type="string">
+  Customer name for the billing key
+</ParamField>
+
+<ParamField path="params.customer_tel" type="string">
+  Customer phone number
+</ParamField>
+
+<ParamField path="params.customer_email" type="string">
+  Customer email address
+</ParamField>
+
+### Returns
+
+<ResponseField name="return" type="array|false">
+  Returns API response array on success, or `false` on failure
+</ResponseField>
+
+<ResponseField name="response.customer_uid" type="string">
+  The customer_uid that was registered
+</ResponseField>
+
+<ResponseField name="response.card_name" type="string">
+  Card brand name (e.g., "BC카드", "신한카드")
+</ResponseField>
+
+<ResponseField name="response.card_number" type="string">
+  Masked card number (e.g., "1234-****-****-5678")
+</ResponseField>
+
+<ResponseField name="response.inserted" type="integer">
+  Unix timestamp when the billing key was created
+</ResponseField>
+
+<ResponseField name="response.updated" type="integer">
+  Unix timestamp when the billing key was last updated
+</ResponseField>
+
+### Implementation
+
+From `portone_api.php:92-102`:
+
+```php
+/**
+ * Issue billing key for recurring payments
+ *
+ * @param string $customer_uid Unique customer identifier for billing key
+ * @param array $params [card_number, expiry, birth, pwd_2digit, pg, ...]
+ * @return array|false API response or false on failure
+ */
+public function issueBillingKey($customer_uid, array $params)
+{
+    return $this->apiRequest('POST', '/subscribe/customers/' . urlencode($customer_uid), $params);
+}
+```
+
+### Example Usage
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->issueBillingKey('gw_123', [
+    'card_number' => '1234567890123456',
+    'expiry' => '2025-12',
+    'birth' => '900101',
+    'pwd_2digit' => '12',
+    'pg' => 'nice',
+    'customer_name' => 'John Doe',
+    'customer_tel' => '01012345678',
+    'customer_email' => 'john@example.com'
+]);
+
+if ($result === false) {
+    echo "Failed to issue billing key: " . $api->getLastError();
+} else {
+    echo "Billing key issued successfully";
+    echo "Card: " . $result['response']['card_name'];
+    echo "Number: " . $result['response']['card_number'];
+}
+```
+
+## getBillingKey()
+
+Retrieve information about an existing billing key.
+
+```php
+public function getBillingKey($customer_uid)
+```
+
+### Parameters
+
+<ParamField path="customer_uid" type="string" required>
+  The billing key identifier to look up
+</ParamField>
+
+### Returns
+
+<ResponseField name="return" type="array|false">
+  Returns API response array on success, or `false` on failure (including if billing key doesn't exist)
+</ResponseField>
+
+<ResponseField name="response.customer_uid" type="string">
+  The customer_uid
+</ResponseField>
+
+<ResponseField name="response.card_name" type="string">
+  Card brand name
+</ResponseField>
+
+<ResponseField name="response.card_number" type="string">
+  Masked card number
+</ResponseField>
+
+<ResponseField name="response.customer_name" type="string">
+  Customer name associated with the billing key
+</ResponseField>
+
+<ResponseField name="response.customer_tel" type="string">
+  Customer phone number
+</ResponseField>
+
+<ResponseField name="response.customer_email" type="string">
+  Customer email address
+</ResponseField>
+
+<ResponseField name="response.inserted" type="integer">
+  Unix timestamp when the billing key was created
+</ResponseField>
+
+<ResponseField name="response.updated" type="integer">
+  Unix timestamp when the billing key was last updated
+</ResponseField>
+
+### Implementation
+
+From `portone_api.php:104-113`:
+
+```php
+/**
+ * Get billing key info
+ *
+ * @param string $customer_uid Billing key identifier
+ * @return array|false API response or false on failure
+ */
+public function getBillingKey($customer_uid)
+{
+    return $this->apiRequest('GET', '/subscribe/customers/' . urlencode($customer_uid));
+}
+```
+
+### Example Usage
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->getBillingKey('gw_123');
+
+if ($result === false) {
+    echo "Billing key not found or error: " . $api->getLastError();
+} else {
+    $info = $result['response'];
+    echo "Customer: " . $info['customer_name'];
+    echo "Card: " . $info['card_name'] . ' ' . $info['card_number'];
+    echo "Created: " . date('Y-m-d H:i:s', $info['inserted']);
+}
+```
+
+## deleteBillingKey()
+
+Delete a billing key to prevent future recurring payments.
+
+```php
+public function deleteBillingKey($customer_uid)
+```
+
+### Parameters
+
+<ParamField path="customer_uid" type="string" required>
+  The billing key identifier to delete
+</ParamField>
+
+### Returns
+
+<ResponseField name="return" type="array|false">
+  Returns API response array on success, or `false` on failure
+</ResponseField>
+
+<ResponseField name="response.customer_uid" type="string">
+  The customer_uid that was deleted
+</ResponseField>
+
+<ResponseField name="response.deleted" type="integer">
+  Unix timestamp when the billing key was deleted
+</ResponseField>
+
+### Implementation
+
+From `portone_api.php:115-124`:
+
+```php
+/**
+ * Delete billing key
+ *
+ * @param string $customer_uid Billing key identifier
+ * @return array|false API response or false on failure
+ */
+public function deleteBillingKey($customer_uid)
+{
+    return $this->apiRequest('DELETE', '/subscribe/customers/' . urlencode($customer_uid));
+}
+```
+
+### Example Usage
+
+```php
+$api = new PortoneApi($imp_key, $imp_secret);
+
+$result = $api->deleteBillingKey('gw_123');
+
+if ($result === false) {
+    echo "Failed to delete billing key: " . $api->getLastError();
+} else {
+    echo "Billing key deleted successfully";
+    echo "Deleted at: " . date('Y-m-d H:i:s', $result['response']['deleted']);
+}
+```
+
+## Best Practices
+
+### Billing Key Lifecycle
+
+1. **Issue**: Create billing key when customer adds a card
+2. **Verify**: Get billing key info to confirm it exists
+3. **Use**: Process recurring payments with `payAgain()`
+4. **Delete**: Remove billing key when customer removes card or account
+
+### Customer UID Format
+
+Use a consistent format for customer_uid:
+
+```php
+// Good formats
+$customer_uid = 'gw_' . $client_id;        // gw_123
+$customer_uid = 'customer_' . $client_id;  // customer_123
+$customer_uid = 'blesta_' . $client_id;    // blesta_123
+
+// Avoid
+$customer_uid = $client_id;  // Too generic
+$customer_uid = rand();      // Not reproducible
+```
+
+### Error Handling
+
+Always check for errors and handle them appropriately:
+
+```php
+$result = $api->issueBillingKey($customer_uid, $params);
+
+if ($result === false) {
+    $error = $api->getLastError();
+    
+    // Log the error
+    error_log("Billing key creation failed: $error");
+    
+    // Show user-friendly message
+    return "Unable to save card information. Please check your card details.";
+}
+```
+
+### Security Considerations
+
+- Never log or store card numbers in plain text
+- Always delete billing keys when a customer requests card removal
+- Use HTTPS for all API communication (handled automatically by the client)
+- Clear sensitive data from memory (handled by the destructor)

@@ -1,0 +1,285 @@
+---
+title: Refund and Void Methods
+description: Methods for refunding and voiding credit card transactions
+---
+
+## Refund Payment
+
+```php
+public function refundCc($reference_id, $transaction_id, $amount)
+```
+
+Refunds a payment in full or partially. Verifies refund amount against available balance before processing.
+
+**Location:** `portone.php:427`
+
+### Parameters
+
+<ParamField path="reference_id" type="string" required>
+  Merchant UID from original payment
+</ParamField>
+
+<ParamField path="transaction_id" type="string" required>
+  PortOne transaction ID (imp_uid) - preferred over reference_id
+</ParamField>
+
+<ParamField path="amount" type="float" required>
+  Refund amount (will be rounded to integer)
+</ParamField>
+
+### Return Value
+
+<ResponseField name="status" type="string" required>
+  Transaction status: `refunded` on success, `error` on failure
+</ResponseField>
+
+<ResponseField name="reference_id" type="string" required>
+  Merchant UID (echoed back)
+</ResponseField>
+
+<ResponseField name="transaction_id" type="string">
+  PortOne transaction ID (echoed back)
+</ResponseField>
+
+### Example Usage
+
+```php
+// Full refund
+$result = $gateway->refundCc(
+    'bl_abc123',
+    'imp_1234567890',
+    50000.00
+);
+
+if ($result['status'] === 'refunded') {
+    echo "Refund processed successfully";
+}
+
+// Partial refund
+$result = $gateway->refundCc(
+    'bl_abc123',
+    'imp_1234567890',
+    25000.00  // Refund half
+);
+```
+
+### Implementation Notes
+
+- Validates amount is positive numeric value
+- Retrieves original payment details via `/payments/{imp_uid}` API
+- Calculates refundable balance: `paid_amount - already_cancelled_amount`
+- Returns error if refund exceeds available balance
+- Calls PortOne `/payments/cancel` API with:
+  - `imp_uid` (preferred) or `merchant_uid`
+  - `amount` - refund amount
+  - `reason` - "Refunded by Blesta"
+- Supports multiple partial refunds until full amount refunded
+
+---
+
+## Void Payment
+
+```php
+public function voidCc($reference_id, $transaction_id)
+```
+
+Voids (fully cancels) a payment. Unlike refund, void cancels the entire transaction without specifying an amount.
+
+**Location:** `portone.php:380`
+
+### Parameters
+
+<ParamField path="reference_id" type="string" required>
+  Merchant UID from original payment
+</ParamField>
+
+<ParamField path="transaction_id" type="string" required>
+  PortOne transaction ID (imp_uid) - preferred over reference_id
+</ParamField>
+
+### Return Value
+
+<ResponseField name="status" type="string" required>
+  Transaction status: `void` on success, `error` on failure
+</ResponseField>
+
+<ResponseField name="reference_id" type="string" required>
+  Merchant UID (echoed back)
+</ResponseField>
+
+<ResponseField name="transaction_id" type="string">
+  PortOne transaction ID (echoed back)
+</ResponseField>
+
+### Example Usage
+
+```php
+// Void entire payment
+$result = $gateway->voidCc(
+    'bl_abc123',
+    'imp_1234567890'
+);
+
+if ($result['status'] === 'void') {
+    echo "Payment voided successfully";
+}
+```
+
+### Implementation Notes
+
+- Calls PortOne `/payments/cancel` API with:
+  - `imp_uid` (if provided) or `merchant_uid`
+  - `reason` - "Voided by Blesta"
+  - No `amount` parameter (full cancellation)
+- Sets error and returns error status if API call fails
+- Logs result to file log
+
+---
+
+## Refund Stored Card Payment
+
+```php
+public function refundStoredCc($client_reference_id, $account_reference_id, $reference_id, $transaction_id, $amount)
+```
+
+Refunds a payment made with a stored billing key. This is a wrapper that calls `refundCc()`.
+
+**Location:** `portone.php:763`
+
+### Parameters
+
+<ParamField path="client_reference_id" type="string" required>
+  Client reference identifier (not used, passed through)
+</ParamField>
+
+<ParamField path="account_reference_id" type="string" required>
+  Billing key (customer_uid) - not used, passed through
+</ParamField>
+
+<ParamField path="reference_id" type="string" required>
+  Merchant UID from original payment
+</ParamField>
+
+<ParamField path="transaction_id" type="string" required>
+  PortOne transaction ID (imp_uid)
+</ParamField>
+
+<ParamField path="amount" type="float" required>
+  Refund amount
+</ParamField>
+
+### Return Value
+
+Same as `refundCc()`.
+
+### Example Usage
+
+```php
+// Refund recurring payment
+$result = $gateway->refundStoredCc(
+    'client_123',
+    'bl_stored_key',
+    'bl_merchant_abc',
+    'imp_9876543210',
+    30000.00
+);
+```
+
+### Implementation Notes
+
+- Simply delegates to `refundCc()` with reference_id, transaction_id, and amount
+- Client and account references are not used in refund process
+
+---
+
+## Void Stored Card Payment
+
+```php
+public function voidStoredCc($client_reference_id, $account_reference_id, $reference_id, $transaction_id)
+```
+
+Voids a payment made with a stored billing key. This is a wrapper that calls `voidCc()`.
+
+**Location:** `portone.php:748`
+
+### Parameters
+
+<ParamField path="client_reference_id" type="string" required>
+  Client reference identifier (not used, passed through)
+</ParamField>
+
+<ParamField path="account_reference_id" type="string" required>
+  Billing key (customer_uid) - not used, passed through
+</ParamField>
+
+<ParamField path="reference_id" type="string" required>
+  Merchant UID from original payment
+</ParamField>
+
+<ParamField path="transaction_id" type="string" required>
+  PortOne transaction ID (imp_uid)
+</ParamField>
+
+### Return Value
+
+Same as `voidCc()`.
+
+### Example Usage
+
+```php
+// Void recurring payment
+$result = $gateway->voidStoredCc(
+    'client_123',
+    'bl_stored_key',
+    'bl_merchant_abc',
+    'imp_9876543210'
+);
+```
+
+### Implementation Notes
+
+- Simply delegates to `voidCc()` with reference_id and transaction_id
+- Client and account references are not used in void process
+
+---
+
+## Refund vs Void
+
+### When to Use Refund
+
+- **Partial refunds** - Return only part of the payment amount
+- **Multiple refunds** - Issue several partial refunds over time
+- **After settlement** - Payment has already been settled to merchant account
+
+### When to Use Void
+
+- **Full cancellation** - Cancel entire payment amount
+- **Before settlement** - Payment hasn't been settled yet
+- **Simple cancellation** - Don't need to specify amount
+
+### Key Differences
+
+| Feature | Refund | Void |
+|---------|--------|------|
+| Amount parameter | Required | Not used |
+| Partial support | Yes | No (full only) |
+| Balance verification | Yes | No |
+| Status returned | `refunded` | `void` |
+| API endpoint | `/payments/cancel` with amount | `/payments/cancel` without amount |
+
+### Amount Validation
+
+The refund method includes strict validation:
+
+```php
+// Calculates refundable balance
+$paid = $payment_info['response']['amount'];           // Original amount
+$already_cancelled = $payment_info['response']['cancel_amount'];  // Already refunded
+$refundable = $paid - $already_cancelled;              // Available to refund
+
+if ($refund_amount > $refundable) {
+    // Error: Cannot refund more than available balance
+}
+```
+
+This prevents over-refunding and ensures data integrity.

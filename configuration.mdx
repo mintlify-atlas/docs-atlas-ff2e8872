@@ -1,0 +1,242 @@
+---
+title: Configuration
+description: Complete guide to configuring the PortOne Blesta Gateway with API credentials and PG settings
+---
+
+# Configuration
+
+This guide covers all configuration settings required to activate and use the PortOne payment gateway in Blesta.
+
+## Configuration Overview
+
+After installing the gateway, you'll need to configure your PortOne API credentials, select your PG provider, and set up logging preferences. All settings are managed through the Blesta admin panel.
+
+## Configuration Fields
+
+The following table describes each configuration field:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| **Merchant Code** | Yes | Merchant identification code starting with `imp_` (e.g., `imp_XXXXX`) |
+| **REST API Key** | Yes | API Key issued from PortOne Console |
+| **REST API Secret** | Yes | API Secret issued from PortOne Console |
+| **PG Provider** | Yes | Payment gateway provider (default: KG이니시스) |
+| **PG Merchant ID (MID)** | Yes | Billing-enabled MID from your PG provider (e.g., `INIBillTst`) |
+| **Channel Key** | No | Required when using multiple payment channels (from PortOne Console) |
+| **Log Directory Path** | No | Directory path for payment logs (default: `/var/www/logs_blesta`) |
+
+<Warning>
+All API credentials are encrypted when stored in the Blesta database. The following fields are automatically encrypted: `imp_code`, `imp_key`, `imp_secret`, and `channel_key`.
+</Warning>
+
+## Step-by-Step Configuration
+
+<Steps>
+  <Step title="Access Gateway Settings">
+    Navigate to the gateway configuration page in Blesta admin:
+
+    **Settings → Payment Gateways → Manage → PortOne → Edit**
+  </Step>
+
+  <Step title="Enter Merchant Code">
+    Enter your PortOne merchant identification code:
+
+    - Field: **Merchant Code** (`imp_code`)
+    - Format: Must start with `imp_` followed by your merchant identifier
+    - Example: `imp_12345678`
+
+    <Note>
+    Find your merchant code in the PortOne Console under account settings.
+    </Note>
+  </Step>
+
+  <Step title="Configure API Credentials">
+    Enter your REST API credentials from PortOne Console:
+
+    - **REST API Key** (`imp_key`) - Your API access key
+    - **REST API Secret** (`imp_secret`) - Your API secret key
+
+    <Warning>
+    Keep your API credentials secure. These are required for all payment operations and billing key management.
+    </Warning>
+  </Step>
+
+  <Step title="Select PG Provider">
+    Choose your payment gateway provider from the dropdown:
+
+    **Supported PG Providers:**
+    - `html5_inicis` - KG이니시스 (default, fully tested)
+    - `nice` / `nice_v2` - 나이스정보통신
+    - `kcp` / `kcp_billing` - NHN KCP
+    - `danal_tpay` / `danal` - 다날
+    - `kicc` - KICC
+    - `ksnet` - KSNET
+    - `smartro_v2` - 스마트로
+    - `welcome` - 웰컴페이먼츠
+    - `daou` - 키움페이
+    - `kakaopay`, `naverpay`, `payco` - Alternative payment methods
+
+    <Note>
+    Ensure your PortOne account has a contract with the selected PG provider.
+    </Note>
+  </Step>
+
+  <Step title="Enter PG Merchant ID">
+    Enter your billing-enabled MID from your PG provider:
+
+    - Field: **PG Merchant ID (MID)** (`pg_mid`)
+    - Example: `INIBillTst` (for KG Inicis test environment)
+    - Note: Use your **billing MID**, not a standard payment MID
+
+    <Warning>
+    A billing-enabled MID is required for recurring payments. Standard MIDs will not support billing key issuance.
+    </Warning>
+  </Step>
+
+  <Step title="Configure Channel Key (Optional)">
+    If you use multiple payment channels, enter your channel key:
+
+    - Field: **Channel Key** (`channel_key`)
+    - Location: PortOne Console → Payment Integration → Channel Management
+    - Required: Only when using multiple channels
+
+    <Note>
+    Skip this field if you only have one payment channel configured in PortOne.
+    </Note>
+  </Step>
+
+  <Step title="Set Log Directory Path">
+    Configure where payment logs should be stored:
+
+    - Field: **Log Directory Path** (`log_path`)
+    - Default: `/var/www/logs_blesta`
+    - Format: Absolute directory path
+
+    **Requirements:**
+    - Directory must exist
+    - Must be writable by the web server user
+    - Must not contain `..` (path traversal protection)
+
+    <Note>
+    Logs are written in format `YYYYMMDD_Portone.log` with entries like:
+    ```
+    [2026-02-24 15:30:00] [INFO] processCc OK | merchant_uid=bl_xxx | imp_uid=imp_xxx
+    [2026-02-24 15:31:00] [ERROR] F0004:PG사 결제요청에 실패하여 중단합니다...
+    ```
+    </Note>
+  </Step>
+
+  <Step title="Save and Test">
+    Click **Save** to apply your configuration. The gateway validates:
+
+    - All required fields are present
+    - PG provider is valid
+    - Log directory exists and is writable
+
+    If validation fails, error messages will indicate which settings need correction.
+  </Step>
+</Steps>
+
+## Validation Rules
+
+The gateway performs the following validations on save:
+
+### Required Field Validation
+
+- **Merchant Code**: Must not be empty (error: `Portone.!error.imp_code.empty`)
+- **REST API Key**: Must not be empty (error: `Portone.!error.imp_key.empty`)
+- **REST API Secret**: Must not be empty (error: `Portone.!error.imp_secret.empty`)
+- **PG Provider**: Must be a valid provider from the supported list (error: `Portone.!error.pg_provider.empty`)
+
+### Log Path Validation
+
+- Directory must exist (error: `Portone.!error.log_path.not_found`)
+- Directory must be writable (error: `Portone.!error.log_path.not_writable`)
+- Path must not contain `..` for security (error: `Portone.!error.log_path.not_found`)
+
+## Testing Your Configuration
+
+<Steps>
+  <Step title="Use Test Credentials">
+    For initial testing, use test mode credentials from PortOne:
+    - Test merchant code
+    - Test API keys
+    - Test MID (e.g., `INIBillTst` for KG Inicis)
+  </Step>
+
+  <Step title="Register a Test Card">
+    Have a customer register a test card through the payment form to verify:
+    - JS SDK loads correctly
+    - Billing key is issued
+    - Card information is stored in Blesta
+  </Step>
+
+  <Step title="Process a Test Payment">
+    Trigger a test payment to confirm:
+    - Recurring payment works with stored billing key
+    - Amount validation succeeds
+    - Payment status is correctly mapped
+    - Logs are written to the configured directory
+  </Step>
+
+  <Step title="Check Logs">
+    Verify log files are being created:
+    ```bash
+    ls -la /var/www/logs_blesta/
+    tail -f /var/www/logs_blesta/$(date +%Y%m%d)_Portone.log
+    ```
+  </Step>
+</Steps>
+
+## Security Considerations
+
+<Warning>
+**Important Security Features:**
+
+- All API credentials are encrypted using Blesta's encryption system
+- Customer billing keys (`customer_uid`) are validated with regex pattern `^bl_[a-zA-Z0-9_]{5,60}$`
+- PG error messages are sanitized before being shown to users
+- Raw error messages (containing internal codes and HTML) are only logged to files
+- Path traversal attacks are blocked in log directory configuration
+- Log injection is prevented by stripping newlines from log messages
+</Warning>
+
+## Common Configuration Issues
+
+### Authentication Failed
+
+If you see `Portone.!error.api.auth_failed`:
+- Verify your API Key and Secret are correct
+- Check that credentials match your merchant code
+- Ensure you're using the correct environment (test vs. production)
+
+### Billing Key Registration Failed
+
+If card registration fails:
+- Verify your PG provider supports billing keys
+- Confirm you're using a billing-enabled MID
+- Check that the MID is correctly configured in PortOne Console
+
+### Log Directory Errors
+
+If log validation fails:
+```bash
+# Create directory with correct permissions
+sudo mkdir -p /var/www/logs_blesta
+sudo chown www-data:www-data /var/www/logs_blesta
+sudo chmod 750 /var/www/logs_blesta
+```
+
+## Next Steps
+
+After configuration is complete:
+
+1. Test the gateway with test credentials
+2. Process test payments to verify functionality
+3. Review logs to ensure proper operation
+4. Switch to production credentials when ready
+5. Monitor payment logs for any issues
+
+<Note>
+Remember to update your credentials from test to production mode when going live. Use separate merchant codes and MIDs for test and production environments.
+</Note>
